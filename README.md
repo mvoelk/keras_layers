@@ -5,7 +5,12 @@ Sparse Convolution layers allow CNNs to process sparse sensory data. To make the
 
 Sparsity Invariant CNNs [arXiv:1708.06500](https://arxiv.org/abs/1708.06500)
 
-### MaxPoolingWithArgmax2D and MaxUnpooling2D
+## MaxPoolingWithArgmax2D and MaxUnpooling2D
 In convolutional encoder-decoder architectures, one may want to invert the max pooling operation without loosing spatial information. This is exactly what these layers do. MaxPoolingWithArgmax2D is a max pooling layer that addidionally outputs the pooling indices and MaxUnpooling2D uses them for unpooling.
 
 SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation [arXiv:1511.00561](http://arxiv.org/abs/1511.00561)
+
+## AddCoords2D
+CoordConv adds the spatial information about the location where the convolution kernel is applied as additional features to its input.
+
+An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution [arXiv:1807.03247](https://arxiv.org/abs/1807.03247)

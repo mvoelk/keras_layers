@@ -208,3 +208,61 @@ class MaxUnpooling2D(Layer):
         output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
         return TensorShape(output_shape)
 
+
+class AddCoords2D(Layer):
+    """Add coords to a tensor as described in CoordConv paper.
+
+    # Arguments
+        with_r: Boolean flag if the r coordinate is added. See paper for more details.
+
+    # Input shape
+        4D tensor with shape: (samples, rows, cols, channels)
+
+    # Output shape
+        same as input except channels + 2, channels + 3 if with_r is 
+
+    # References
+        https://arxiv.org/abs/1807.03247
+    """
+    def __init__(self, with_r=False, **kwargs):
+        super(AddCoords2D, self).__init__(**kwargs)
+        self.with_r = with_r
+        
+    def call(self, input_tensor):
+        """
+        input_tensor: (batch_size, x_dim, y_dim, c)
+        """
+        input_shape
+        batch_size, x_dim, y_dim, c = tf.shape(input_tensor)
+        
+        xx_ones = tf.ones([batch_size, x_dim], dtype=tf.int32)
+        xx_ones = tf.expand_dims(xx_ones, -1)
+        xx_range = tf.tile(tf.expand_dims(tf.range(x_dim), 0), [batch_size, 1])
+        xx_range = tf.expand_dims(xx_range, 1)
+        xx_channel = tf.matmul(xx_ones, xx_range)
+        xx_channel = tf.expand_dims(xx_channel, -1)
+        xx_channel = tf.cast(xx_channel, 'float32') / (tf.cast(x_dim, 'float32') - 1)
+        xx_channel = xx_channel*2 - 1
+        
+        yy_ones = tf.ones([batch_size, y_dim], dtype=tf.int32)
+        yy_ones = tf.expand_dims(yy_ones, 1)
+        yy_range = tf.tile(tf.expand_dims(tf.range(y_dim), 0), [batch_size, 1])
+        yy_range = tf.expand_dims(yy_range, -1)
+        yy_channel = tf.matmul(yy_range, yy_ones)
+        yy_channel = tf.expand_dims(yy_channel, -1)
+        yy_channel = tf.cast(yy_channel, 'float32') / (tf.cast(x_dim, 'float32') - 1)
+        yy_channel = yy_channel*2 - 1
+        
+        output_tensor = tf.concat([input_tensor, xx_channel, yy_channel], axis=-1)
+        if self.with_r:
+            rr = tf.sqrt(tf.square(xx_channel-0.5) + tf.square(yy_channel-0.5))
+            output_tensor = tf.concat([output_tensor, rr], axis=-1)
+        return output_tensor
+    
+    def compute_output_shape(self, input_shape):
+        output_shape = list(input_shape)
+        output_shape[3] = output_shape[3] + 2
+        if self.with_r:
+            output_shape[3] = output_shape[3] + 1
+        return tuple(output_shape)
+
