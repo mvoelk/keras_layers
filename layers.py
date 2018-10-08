@@ -2,7 +2,7 @@
 import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.layers import Layer
+from tensorflow.python.keras.layers import Layer, Lambda
 from tensorflow.python.framework.tensor_shape import TensorShape
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints
@@ -266,3 +266,9 @@ class AddCoords2D(Layer):
             output_shape[3] = output_shape[3] + 1
         return tuple(output_shape)
 
+
+def Resize2DBilinear(size):
+    return Lambda(lambda x: tf.image.resize_bilinear(x, size, align_corners=True))
+
+def Resize2DNearest(size):
+    return Lambda(lambda x: tf.image.resize_nearest_neighbor(x, size, align_corners=True))
