@@ -1,4 +1,5 @@
 
+import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
@@ -31,6 +32,7 @@ class SparseConv2D(Layer):
                  #activity_regularizer=None,
                  kernel_constraint=None,
                  bias_constraint=None,
+                 binary=False,
                  **kwargs):
         super(SparseConv2D, self).__init__(**kwargs)
         
@@ -47,7 +49,8 @@ class SparseConv2D(Layer):
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
-        
+        self.binary = binary
+    
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -85,21 +88,25 @@ class SparseConv2D(Layer):
             # if no maks is provided, get it from the features
             features = inputs
             mask = tf.expand_dims(tf.reduce_sum(features, axis=-1), axis=-1)
-        
-        mask = tf.where(tf.equal(mask, 0), tf.zeros_like(mask), tf.ones_like(mask)) 
+            mask = tf.where(tf.equal(mask, 0), tf.zeros_like(mask), tf.ones_like(mask)) 
             
         features = tf.multiply(features, mask)
         features = nn_ops.convolution(features, self.kernel, self.padding.upper(), self.strides, self.dilation_rate)
 
         kernel = tf.ones([*self.kernel_size, 1, 1])
         norm = nn_ops.convolution(mask, kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        
+        if self.binary:
+            mask = nn_ops.pool(mask, self.kernel_size, 'MAX', self.padding.upper(), self.dilation_rate, self.strides)
+        else:
+            mask = norm / np.prod(self.kernel_size)
+        
         norm = tf.where(tf.equal(norm,0), tf.zeros_like(norm), tf.reciprocal(norm))
         
         features = tf.multiply(features, norm)
         if self.use_bias:
             features = tf.add(features, self.bias)
             
-        mask = nn_ops.pool(mask, self.kernel_size, 'MAX', self.padding.upper(), self.dilation_rate, self.strides)
         
         return [features, mask]
     
