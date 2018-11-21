@@ -13,8 +13,18 @@ from tensorflow.python.keras.utils import conv_utils
 class SparseConv2D(Layer):
     """2D sparse convolution layer for sparse input data.
     
+    # Usage
+        x, m = SparseConv2D(32, 3, padding='same')(x)
+        x = Activation('relu')(x)
+        x, m = SparseConv2D(32, 3, padding='same')([x,m])
+        x = Activation('relu')(x)
+    
+    # Notes
+        Sparse Convolution is the same idea as Partial Convolution.
+    
     # References
-        [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
+        [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)  
+        [Image Inpainting for Irregular Holes Using Partial Convolutions](https://arxiv.org/abs/1804.07723)
     """
     def __init__(self,
                  filters,
@@ -106,7 +116,6 @@ class SparseConv2D(Layer):
         features = tf.multiply(features, norm)
         if self.use_bias:
             features = tf.add(features, self.bias)
-            
         
         return [features, mask]
     
