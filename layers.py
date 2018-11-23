@@ -223,7 +223,7 @@ class MaxUnpooling2D(Layer):
     def compute_output_shape(self, input_shape):
         mask_shape = input_shape[1]
         output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
-        return output_shape
+        return tuple(output_shape)
 
 
 class AddCoords2D(Layer):
