@@ -8,12 +8,13 @@ from tensorflow.python.framework.tensor_shape import TensorShape
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints
 from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.keras.utils import tf_utils
 
 
 class SparseConv2D(Layer):
     """2D sparse convolution layer for sparse input data.
     
-    # Usage
+    # Example
         x, m = SparseConv2D(32, 3, padding='same')(x)
         x = Activation('relu')(x)
         x, m = SparseConv2D(32, 3, padding='same')([x,m])
@@ -42,7 +43,7 @@ class SparseConv2D(Layer):
                  #activity_regularizer=None,
                  kernel_constraint=None,
                  bias_constraint=None,
-                 binary=False,
+                 binary=True,
                  **kwargs):
         super(SparseConv2D, self).__init__(**kwargs)
         
@@ -61,12 +62,12 @@ class SparseConv2D(Layer):
         self.bias_constraint = constraints.get(bias_constraint)
         self.binary = binary
     
+    @tf_utils.shape_type_conversion
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
         else:
             feature_shape = input_shape
-        feature_shape = TensorShape(feature_shape).as_list()
         
         kernel_shape = [*self.kernel_size, feature_shape[-1], self.filters]
         
@@ -119,12 +120,12 @@ class SparseConv2D(Layer):
         
         return [features, mask]
     
+    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
         else:
             feature_shape = input_shape
-        feature_shape = TensorShape(feature_shape).as_list()
         
         space = feature_shape[1:-1]
         new_space = []
@@ -140,7 +141,7 @@ class SparseConv2D(Layer):
         feature_shape = [feature_shape[0], *new_space, self.filters]
         mask_shape = [*feature_shape[:-1], 1]
         
-        return [TensorShape(feature_shape), TensorShape(mask_shape)]
+        return [feature_shape, mask_shape]
 
 
 class MaxPoolingWithArgmax2D(Layer):
@@ -166,13 +167,13 @@ class MaxPoolingWithArgmax2D(Layer):
         output, argmax = nn_ops.max_pool_with_argmax(inputs, ksize, strides, padding)
         argmax = tf.cast(argmax, K.floatx())
         return [output, argmax]
-
+    
+    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         ratio = (1, 2, 2, 1)
-        input_shape = TensorShape(input_shape).as_list()
         output_shape = [dim // ratio[idx] if dim is not None else None for idx, dim in enumerate(input_shape)]
         output_shape = tuple(output_shape)
-        return [TensorShape(output_shape), TensorShape(output_shape)]
+        return [output_shape, output_shape]
 
     def compute_mask(self, inputs, mask=None):
         return 2 * [None]
@@ -200,7 +201,6 @@ class MaxUnpooling2D(Layer):
             #  calculation new shape
             if output_shape is None:
                 output_shape = (input_shape[0], input_shape[1] * self.size[0], input_shape[2] * self.size[1], input_shape[3])
-            self.output_shape1 = output_shape
             
             # calculation indices for batch, height, width and feature maps
             one_like_mask = K.ones_like(mask, dtype='int32')
@@ -218,11 +218,12 @@ class MaxUnpooling2D(Layer):
             values = K.reshape(updates, [updates_size])
             ret = tf.scatter_nd(indices, values, output_shape)
             return ret
-
+    
+    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
-        mask_shape = TensorShape(input_shape[1]).as_list()
+        mask_shape = input_shape[1]
         output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
-        return TensorShape(output_shape)
+        return output_shape
 
 
 class AddCoords2D(Layer):
@@ -230,13 +231,18 @@ class AddCoords2D(Layer):
 
     # Arguments
         with_r: Boolean flag if the r coordinate is added. See paper for more details.
-
+    
     # Input shape
         4D tensor with shape: (samples, rows, cols, channels)
 
     # Output shape
-        same as input except channels + 2, channels + 3 if with_r is 
-
+        same as input except channels + 2, channels + 3 if with_r is True
+    
+    # Example
+        x = Conv2D(32, 3, padding='same', activation='relu')(x)
+        x = AddCoords2D()(x)
+        x = Conv2D(32, 3, padding='same', activation='relu')(x)
+    
     # References
         https://arxiv.org/abs/1807.03247
     """
@@ -248,7 +254,6 @@ class AddCoords2D(Layer):
         """
         input_tensor: (batch_size, x_dim, y_dim, c)
         """
-        input_shape
         batch_size, x_dim, y_dim, c = tf.shape(input_tensor)
         
         xx_ones = tf.ones([batch_size, x_dim], dtype=tf.int32)
@@ -275,6 +280,7 @@ class AddCoords2D(Layer):
             output_tensor = tf.concat([output_tensor, rr], axis=-1)
         return output_tensor
     
+    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         output_shape = list(input_shape)
         output_shape[3] = output_shape[3] + 2
