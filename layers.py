@@ -4,7 +4,6 @@ import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Layer, Lambda
-from tensorflow.python.framework.tensor_shape import TensorShape
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints
 from tensorflow.python.keras.utils import conv_utils
@@ -254,7 +253,10 @@ class AddCoords2D(Layer):
         """
         input_tensor: (batch_size, x_dim, y_dim, c)
         """
-        batch_size, x_dim, y_dim, c = tf.shape(input_tensor)
+        input_shape = tf.shape(input_tensor)
+        batch_size = input_shape[0]
+        x_dim = input_shape[1]
+        y_dim = input_shape[2]
         
         xx_ones = tf.ones([batch_size, x_dim], dtype=tf.int32)
         xx_ones = tf.expand_dims(xx_ones, -1)
