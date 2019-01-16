@@ -143,6 +143,115 @@ class SparseConv2D(Layer):
         return [feature_shape, mask_shape]
 
 
+class DepthwiseConv2D(Layer):
+    """2D depthwise convolution layer.
+    
+    # Notes
+        A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent 
+        to the SeparableConv2D layer provided by Keras.
+    
+    # References
+        [Xception: Deep Learning with Depthwise Separable Convolutions](http://arxiv.org/abs/1610.02357)
+    """
+    def __init__(self,
+                 channel_multiplier,
+                 kernel_size,
+                 strides=(1, 1),
+                 padding='valid',
+                 #data_format=None,
+                 dilation_rate=(1, 1),
+                 #activation=None,
+                 use_bias=False,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 #activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super(DepthwiseConv2D, self).__init__(**kwargs)
+        
+        rank = 2
+        self.channel_multiplier = channel_multiplier
+        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
+        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
+        self.padding = conv_utils.normalize_padding(padding)
+        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
+        self.use_bias = use_bias
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_constraint = constraints.get(bias_constraint)
+    
+    @tf_utils.shape_type_conversion
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        kernel_shape = [*self.kernel_size, feature_shape[-1], self.channel_multiplier]
+        
+        self.kernel = self.add_variable(name='kernel',
+                                        shape=kernel_shape,
+                                        initializer=self.kernel_initializer,
+                                        regularizer=self.kernel_regularizer,
+                                        constraint=self.kernel_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        if self.use_bias:
+            self.bias = self.add_variable(name='bias',
+                                          shape=(feature_shape[-1]*self.channel_multiplier,),
+                                          initializer=self.bias_initializer,
+                                          regularizer=self.bias_regularizer,
+                                          constraint=self.bias_constraint,
+                                          trainable=True,
+                                          dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        super(DepthwiseConv2D, self).build(input_shape)
+    
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+        else:
+            features = inputs
+        
+        strides = [1, self.strides[0], self.strides[1], 1]
+        features = tf.nn.depthwise_conv2d(features, self.kernel, strides, self.padding.upper())
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        return [features,]
+    
+    @tf_utils.shape_type_conversion
+    def compute_output_shape(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        space = feature_shape[1:-1]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+        
+        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.channel_multiplier]
+        
+        return [feature_shape,]
+
+
 class MaxPoolingWithArgmax2D(Layer):
     '''MaxPooling for unpooling with indices.
     
@@ -243,7 +352,7 @@ class AddCoords2D(Layer):
         x = Conv2D(32, 3, padding='same', activation='relu')(x)
     
     # References
-        https://arxiv.org/abs/1807.03247
+        [An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution](http://arxiv.org/abs/1807.03247)
     """
     def __init__(self, with_r=False, **kwargs):
         super(AddCoords2D, self).__init__(**kwargs)

@@ -6,6 +6,11 @@ Sparse/Partial Convolution layers allow CNNs to process sparse sensory data. To 
 Sparsity Invariant CNNs [arXiv:1708.06500](https://arxiv.org/abs/1708.06500)  
 Image Inpainting for Irregular Holes Using Partial Convolutions [arXiv:1804.07723](https://arxiv.org/abs/1804.07723)
 
+## DepthwiseConv2D
+Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to a SeperableConv2D layer provided by Keras.
+
+Xception: Deep Learning with Depthwise Separable Convolutions [arXiv:1610.02357](http://arxiv.org/abs/1610.02357)
+
 ## MaxPoolingWithArgmax2D and MaxUnpooling2D
 In convolutional encoder-decoder architectures, one may want to invert the max pooling operation without loosing spatial information. This is exactly what these layers do. MaxPoolingWithArgmax2D is a max pooling layer that addidionally outputs the pooling indices and MaxUnpooling2D uses them for unpooling.
 
