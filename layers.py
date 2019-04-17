@@ -42,7 +42,7 @@ class SparseConv2D(Layer):
                  #activity_regularizer=None,
                  kernel_constraint=None,
                  bias_constraint=None,
-                 binary=True,
+                 binary=False,
                  **kwargs):
         super(SparseConv2D, self).__init__(**kwargs)
         
@@ -398,6 +398,29 @@ class AddCoords2D(Layer):
         if self.with_r:
             output_shape[3] = output_shape[3] + 1
         return tuple(output_shape)
+
+
+class LayerNormalization(Layer):
+    """Layer Normalization Layer.
+    
+    # References
+        [Layer Normalization](http://arxiv.org/abs/1607.06450)
+    """
+    def __init__(self, eps=1e-6, **kwargs):
+        self.eps = eps
+        super(LayerNormalization, self).__init__(**kwargs)
+    def build(self, input_shape):
+        self.gamma = self.add_weight(name='gamma', shape=input_shape[-1:],
+                                     initializer=initializers.Ones(), trainable=True)
+        self.beta = self.add_weight(name='beta', shape=input_shape[-1:],
+                                    initializer=initializers.Zeros(), trainable=True)
+        super(LayerNormalization, self).build(input_shape)
+    def call(self, x):
+        mean = K.mean(x, axis=-1, keepdims=True)
+        std = K.std(x, axis=-1, keepdims=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
 
 def Resize2DBilinear(size):
