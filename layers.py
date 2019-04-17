@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.layers import Layer, Lambda
+from tensorflow.python.keras.layers import Layer, Lambda, Conv2D
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints
 from tensorflow.python.keras.utils import conv_utils
@@ -421,6 +421,26 @@ class LayerNormalization(Layer):
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
     def compute_output_shape(self, input_shape):
         return input_shape
+
+
+class Conv2DWeightNorm(Conv2D):
+    """Conv2D Layer with Weight Normalization.
+    
+    # References
+        [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
+    """
+    def __init__(self, filters, kernel_size, eps=1e-6, **kwargs):
+        self.eps = eps
+        super(Conv2DWeightNorm, self).__init__(filters, kernel_size, **kwargs)
+    def build(self, input_shape):
+        self.wn_g = self.add_weight(name='wn_g', 
+                                    shape=(self.filters,),
+                                    dtype=self.dtype, 
+                                    initializer=initializers.Ones(), 
+                                    trainable=True)
+        super(Conv2DWeightNorm, self).build(input_shape)
+        square_sum = K.sum(K.square(self.kernel), [0, 1, 2])
+        self.kernel = self.kernel / K.sqrt(square_sum + self.eps) * self.wn_g
 
 
 def Resize2DBilinear(size):
