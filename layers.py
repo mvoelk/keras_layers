@@ -7,7 +7,6 @@ from tensorflow.python.keras.layers import Layer, Lambda, Conv2D
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints
 from tensorflow.python.keras.utils import conv_utils
-from tensorflow.python.keras.utils import tf_utils
 
 
 class SparseConv2D(Layer):
@@ -61,7 +60,6 @@ class SparseConv2D(Layer):
         self.bias_constraint = constraints.get(bias_constraint)
         self.binary = binary
     
-    @tf_utils.shape_type_conversion
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -70,21 +68,21 @@ class SparseConv2D(Layer):
         
         kernel_shape = [*self.kernel_size, feature_shape[-1], self.filters]
         
-        self.kernel = self.add_variable(name='kernel',
-                                        shape=kernel_shape,
-                                        initializer=self.kernel_initializer,
-                                        regularizer=self.kernel_regularizer,
-                                        constraint=self.kernel_constraint,
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
                                         trainable=True,
                                         dtype=self.dtype)
-        if self.use_bias:
-            self.bias = self.add_variable(name='bias',
-                                          shape=(self.filters,),
-                                          initializer=self.bias_initializer,
-                                          regularizer=self.bias_regularizer,
-                                          constraint=self.bias_constraint,
-                                          trainable=True,
-                                          dtype=self.dtype)
         else:
             self.bias = None
         
@@ -111,7 +109,7 @@ class SparseConv2D(Layer):
         else:
             mask = norm / np.prod(self.kernel_size)
         
-        norm = tf.where(tf.equal(norm,0), tf.zeros_like(norm), tf.reciprocal(norm))
+        norm = tf.where(tf.equal(norm,0), tf.zeros_like(norm), 1/norm)
         
         features = tf.multiply(features, norm)
         if self.use_bias:
@@ -119,7 +117,6 @@ class SparseConv2D(Layer):
         
         return [features, mask]
     
-    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -186,7 +183,6 @@ class DepthwiseConv2D(Layer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
     
-    @tf_utils.shape_type_conversion
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -195,21 +191,21 @@ class DepthwiseConv2D(Layer):
         
         kernel_shape = [*self.kernel_size, feature_shape[-1], self.channel_multiplier]
         
-        self.kernel = self.add_variable(name='kernel',
-                                        shape=kernel_shape,
-                                        initializer=self.kernel_initializer,
-                                        regularizer=self.kernel_regularizer,
-                                        constraint=self.kernel_constraint,
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(feature_shape[-1]*self.channel_multiplier,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
                                         trainable=True,
                                         dtype=self.dtype)
-        if self.use_bias:
-            self.bias = self.add_variable(name='bias',
-                                          shape=(feature_shape[-1]*self.channel_multiplier,),
-                                          initializer=self.bias_initializer,
-                                          regularizer=self.bias_regularizer,
-                                          constraint=self.bias_constraint,
-                                          trainable=True,
-                                          dtype=self.dtype)
         else:
             self.bias = None
         
@@ -227,9 +223,8 @@ class DepthwiseConv2D(Layer):
         if self.use_bias:
             features = tf.add(features, self.bias)
         
-        return [features,]
+        return features
     
-    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -249,7 +244,7 @@ class DepthwiseConv2D(Layer):
         
         feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.channel_multiplier]
         
-        return [feature_shape,]
+        return feature_shape
 
 
 class MaxPoolingWithArgmax2D(Layer):
@@ -276,7 +271,6 @@ class MaxPoolingWithArgmax2D(Layer):
         argmax = tf.cast(argmax, K.floatx())
         return [output, argmax]
     
-    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         ratio = (1, 2, 2, 1)
         output_shape = [dim // ratio[idx] if dim is not None else None for idx, dim in enumerate(input_shape)]
@@ -303,31 +297,30 @@ class MaxUnpooling2D(Layer):
 
     def call(self, inputs, output_shape=None):
         updates, mask = inputs[0], inputs[1]
-        with tf.variable_scope(self.name):
-            mask = tf.cast(mask, 'int32')
-            input_shape = tf.shape(updates, out_type='int32')
-            #  calculation new shape
-            if output_shape is None:
-                output_shape = (input_shape[0], input_shape[1] * self.size[0], input_shape[2] * self.size[1], input_shape[3])
-            
-            # calculation indices for batch, height, width and feature maps
-            one_like_mask = K.ones_like(mask, dtype='int32')
-            batch_shape = K.concatenate([[input_shape[0]], [1], [1], [1]], axis=0)
-            batch_range = K.reshape(tf.range(output_shape[0], dtype='int32'), shape=batch_shape)
-            b = one_like_mask * batch_range
-            y = mask // (output_shape[2] * output_shape[3])
-            x = (mask // output_shape[3]) % output_shape[2]
-            feature_range = tf.range(output_shape[3], dtype='int32')
-            f = one_like_mask * feature_range
-            
-            # transpose indices & reshape update values to one dimension
-            updates_size = tf.size(updates)
-            indices = K.transpose(K.reshape(K.stack([b, y, x, f]), [4, updates_size]))
-            values = K.reshape(updates, [updates_size])
-            ret = tf.scatter_nd(indices, values, output_shape)
-            return ret
+        
+        mask = tf.cast(mask, 'int32')
+        input_shape = tf.shape(updates, out_type='int32')
+        #  calculation new shape
+        if output_shape is None:
+            output_shape = (input_shape[0], input_shape[1] * self.size[0], input_shape[2] * self.size[1], input_shape[3])
+        
+        # calculation indices for batch, height, width and feature maps
+        one_like_mask = K.ones_like(mask, dtype='int32')
+        batch_shape = K.concatenate([[input_shape[0]], [1], [1], [1]], axis=0)
+        batch_range = K.reshape(tf.range(output_shape[0], dtype='int32'), shape=batch_shape)
+        b = one_like_mask * batch_range
+        y = mask // (output_shape[2] * output_shape[3])
+        x = (mask // output_shape[3]) % output_shape[2]
+        feature_range = tf.range(output_shape[3], dtype='int32')
+        f = one_like_mask * feature_range
+        
+        # transpose indices & reshape update values to one dimension
+        updates_size = tf.size(updates)
+        indices = K.transpose(K.reshape(K.stack([b, y, x, f]), [4, updates_size]))
+        values = K.reshape(updates, [updates_size])
+        ret = tf.scatter_nd(indices, values, output_shape)
+        return ret
     
-    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         mask_shape = input_shape[1]
         output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
@@ -391,7 +384,6 @@ class AddCoords2D(Layer):
             output_tensor = tf.concat([output_tensor, rr], axis=-1)
         return output_tensor
     
-    @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         output_shape = list(input_shape)
         output_shape[3] = output_shape[3] + 2
@@ -433,18 +425,18 @@ class Conv2DWeightNorm(Conv2D):
         self.eps = eps
         super(Conv2DWeightNorm, self).__init__(filters, kernel_size, **kwargs)
     def build(self, input_shape):
-        self.wn_g = self.add_weight(name='wn_g', 
-                                    shape=(self.filters,),
-                                    dtype=self.dtype, 
-                                    initializer=initializers.Ones(), 
-                                    trainable=True)
         super(Conv2DWeightNorm, self).build(input_shape)
+        self.wn_g = self.add_weight(name='wn_g', 
+                            shape=(self.filters,),
+                            dtype=self.dtype, 
+                            initializer=initializers.Ones(), 
+                            trainable=True)
         square_sum = K.sum(K.square(self.kernel), [0, 1, 2])
         self.kernel = self.kernel / K.sqrt(square_sum + self.eps) * self.wn_g
 
 
 def Resize2DBilinear(size):
-    return Lambda(lambda x: tf.image.resize_bilinear(x, size, align_corners=True))
+    return Lambda(lambda x: tf.image.resize(x, size, method='bilinear'))
 
 def Resize2DNearest(size):
-    return Lambda(lambda x: tf.image.resize_nearest_neighbor(x, size, align_corners=True))
+    return Lambda(lambda x: tf.image.resize(x, size, method='nearest'))
