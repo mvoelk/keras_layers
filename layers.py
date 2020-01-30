@@ -5,12 +5,43 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Layer, Lambda, Conv2D
 from tensorflow.python.ops import nn_ops
-from tensorflow.python.keras import initializers, regularizers, constraints
+from tensorflow.python.keras import initializers, regularizers, constraints, activations
 from tensorflow.python.keras.utils import conv_utils
 
 
+def gaussian_init(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    return K.constant(v, dtype=dtype)
+
+def conv_init_linear(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    fan_in = np.prod(shape[:-1])
+    v = v / (fan_in**0.5)
+    return K.constant(v, dtype=dtype)
+
+def conv_init_relu(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    fan_in = np.prod(shape[:-1])
+    v = v / (fan_in**0.5) * 2
+    return K.constant(v, dtype=dtype)
+
+
 class SparseConv2D(Layer):
-    """2D sparse convolution layer for sparse input data.
+    """2D Sparse Convolution layer for sparse input data.
+    
+    # Arguments
+        They are the same as for the normal Conv2D layer.
+        binary: Boolean flag, whether the sparsity is propagated as binary 
+            mask or as float values.
+    
+    # Input shape
+        features: 4D tensor with shape (samples, rows, cols, channels)
+        mask: 4D tensor with shape (samples, rows, cols, 1)
+            If no mask is provided, all input pixels with features unequal 
+            to zero are considered as valid.
     
     # Example
         x, m = SparseConv2D(32, 3, padding='same')(x)
@@ -19,11 +50,11 @@ class SparseConv2D(Layer):
         x = Activation('relu')(x)
     
     # Notes
-        Sparse Convolution is the same idea as Partial Convolution.
+        Sparse Convolution propagates the sparsity of the input data
+        through the network using a 2D mask.
     
     # References
-        [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)  
-        [Image Inpainting for Irregular Holes Using Partial Convolutions](https://arxiv.org/abs/1804.07723)
+        [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
     """
     def __init__(self,
                  filters,
@@ -32,18 +63,19 @@ class SparseConv2D(Layer):
                  padding='valid',
                  #data_format=None,
                  dilation_rate=(1, 1),
-                 #activation=None,
+                 activation=None,
                  use_bias=True,
-                 kernel_initializer='glorot_uniform',
+                 kernel_initializer=conv_init_relu,
                  bias_initializer='zeros',
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 #activity_regularizer=None,
+                 activity_regularizer=None,
                  kernel_constraint=None,
                  bias_constraint=None,
-                 binary=False,
+                 binary=True,
                  **kwargs):
-        super(SparseConv2D, self).__init__(**kwargs)
+        super(SparseConv2D, self).__init__(
+            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
         
         rank = 2
         self.filters = filters
@@ -51,6 +83,7 @@ class SparseConv2D(Layer):
         self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
         self.padding = conv_utils.normalize_padding(padding)
         self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
+        self.activation = activations.get(activation)
         self.use_bias = use_bias
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
@@ -66,15 +99,19 @@ class SparseConv2D(Layer):
         else:
             feature_shape = input_shape
         
-        kernel_shape = [*self.kernel_size, feature_shape[-1], self.filters]
-        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
+                                      shape=self.kernel_shape,
                                       initializer=self.kernel_initializer,
                                       regularizer=self.kernel_regularizer,
                                       constraint=self.kernel_constraint,
                                       trainable=True,
                                       dtype=self.dtype)
+        
+        self.mask_kernel_shape = (*self.kernel_size, 1, 1)
+        self.mask_kernel = tf.ones(self.mask_kernel_shape)
+        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
+        
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
                                         shape=(self.filters,),
@@ -93,27 +130,32 @@ class SparseConv2D(Layer):
             features = inputs[0]
             mask = inputs[1]
         else:
-            # if no maks is provided, get it from the features
+            # if no mask is provided, get it from the features
             features = inputs
-            mask = tf.expand_dims(tf.reduce_sum(features, axis=-1), axis=-1)
-            mask = tf.where(tf.equal(mask, 0), tf.zeros_like(mask), tf.ones_like(mask)) 
+            mask = tf.where(tf.equal(tf.reduce_sum(features, axis=-1, keepdims=True), 0), 0.0, 1.0) 
             
         features = tf.multiply(features, mask)
         features = nn_ops.convolution(features, self.kernel, self.padding.upper(), self.strides, self.dilation_rate)
 
-        kernel = tf.ones([*self.kernel_size, 1, 1])
-        norm = nn_ops.convolution(mask, kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        norm = nn_ops.convolution(mask, self.mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        
+        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
         
         if self.binary:
-            mask = nn_ops.pool(mask, self.kernel_size, 'MAX', self.padding.upper(), self.dilation_rate, self.strides)
+            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
         else:
-            mask = norm / np.prod(self.kernel_size)
+            mask = norm / mask_fan_in
         
-        norm = tf.where(tf.equal(norm,0), tf.zeros_like(norm), 1/norm)
+        #ratio = tf.where(tf.equal(norm,0), 0.0, 1/norm) # Note: The authors use this in the paper, but it would require special initialization...
+        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
         
-        features = tf.multiply(features, norm)
+        features = tf.multiply(features, ratio)
+        
         if self.use_bias:
             features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
         
         return [features, mask]
     
@@ -331,10 +373,10 @@ class AddCoords2D(Layer):
     """Add coords to a tensor as described in CoordConv paper.
 
     # Arguments
-        with_r: Boolean flag if the r coordinate is added. See paper for more details.
+        with_r: Boolean flag, whether the r coordinate is added or not. See paper for more details.
     
     # Input shape
-        4D tensor with shape: (samples, rows, cols, channels)
+        4D tensor with shape (samples, rows, cols, channels)
 
     # Output shape
         same as input except channels + 2, channels + 3 if with_r is True
