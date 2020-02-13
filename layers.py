@@ -182,6 +182,168 @@ class SparseConv2D(Layer):
         return [feature_shape, mask_shape]
 
 
+class PartialConv2D(Layer):
+    """2D Partial Convolution layer for sparse input data.
+        
+    # Arguments
+        They are the same as for the normal Conv2D layer.
+        binary: Boolean flag, whether the sparsity is propagated as binary 
+            mask or as float values.
+    
+    # Input shape
+        features: 4D tensor with shape (samples, rows, cols, channels)
+        mask: 4D tensor with shape (samples, rows, cols, channels)
+            If the shape is (samples, rows, cols, 1), the mask is repeated 
+            for each channel. If no mask is provided, all input elements 
+            unequal to zero are considered as valid.
+    
+    # Example
+        x, m = PartialConv2D(32, 3, padding='same')(x)
+        x = Activation('relu')(x)
+        x, m = PartialConv2D(32, 3, padding='same')([x,m])
+        x = Activation('relu')(x)
+    
+    # Notes
+        In contrast to Sparse Convolution, Partial Convolution propagates 
+        the sparsity for each channel separately. This makes it possible 
+        to concatenate the features and the masks from different branches 
+        in architecture.
+    
+    # References
+        [Image Inpainting for Irregular Holes Using Partial Convolutions](https://arxiv.org/abs/1804.07723)
+        [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
+    """
+    def __init__(self,
+                 filters,
+                 kernel_size,
+                 strides=(1, 1),
+                 padding='valid',
+                 #data_format=None,
+                 dilation_rate=(1, 1),
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer=conv_init_relu,
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 binary=True,
+                 **kwargs):
+        super(PartialConv2D, self).__init__(
+            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
+        
+        rank = 2
+        self.filters = filters
+        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
+        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
+        self.padding = conv_utils.normalize_padding(padding)
+        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
+        self.activation = activations.get(activation)
+        self.use_bias = use_bias
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_constraint = constraints.get(bias_constraint)
+        self.binary = binary
+    
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+            mask_shape = input_shape[1]
+            self.mask_shape = mask_shape
+        else:
+            feature_shape = input_shape
+            self.mask_shape = feature_shape
+        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        
+        self.mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        self.mask_kernel = tf.ones(self.mask_kernel_shape)
+        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        super(PartialConv2D, self).build(input_shape)
+    
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+            mask = inputs[1]
+            # if mask has only one channel, repeat
+            if self.mask_shape[-1] == 1:
+                mask = tf.repeat(mask, tf.shape(features)[-1], axis=-1)
+        else:
+            # if no mask is provided, get it from the features
+            features = inputs
+            mask = tf.where(tf.equal(features, 0), 0.0, 1.0) 
+            
+        features = tf.multiply(features, mask)
+        features = nn_ops.convolution(features, self.kernel, self.padding.upper(), self.strides, self.dilation_rate)
+
+        norm = nn_ops.convolution(mask, self.mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        
+        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
+        
+        if self.binary:
+            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
+        else:
+            mask = norm / mask_fan_in
+        
+        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
+        
+        features = tf.multiply(features, ratio)
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return [features, mask]
+    
+    def compute_output_shape(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        space = feature_shape[1:-1]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+        
+        feature_shape = [feature_shape[0], *new_space, self.filters]
+        mask_shape = [feature_shape[0], *new_space, self.filters]
+        
+        return [feature_shape, mask_shape]
+
+
 class DepthwiseConv2D(Layer):
     """2D depthwise convolution layer.
     
