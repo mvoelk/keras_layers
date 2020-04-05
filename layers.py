@@ -17,15 +17,36 @@ def gaussian_init(shape, dtype=None, partition_info=None):
 def conv_init_linear(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:-1])
+    fan_in = np.prod(shape[:3])
     v = v / (fan_in**0.5)
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:-1])
+    fan_in = np.prod(shape[:3])
+    v = v / (fan_in**0.5) * 2**0.5
+    return K.constant(v, dtype=dtype)
+
+def conv_init_relu2(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    fan_in = np.prod(shape[:3])
     v = v / (fan_in**0.5) * 2
+    return K.constant(v, dtype=dtype)
+
+def depthwiseconv_init_linear(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    fan_in = np.prod(shape[:2])
+    v = v / (fan_in**0.5)
+    return K.constant(v, dtype=dtype)
+
+def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
+    v = np.random.randn(*shape)
+    v = np.clip(v, -3, +3)
+    fan_in = np.prod(shape[:2])
+    v = v / (fan_in**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
 
@@ -38,8 +59,8 @@ class SparseConv2D(Layer):
             mask or as float values.
     
     # Input shape
-        features: 4D tensor with shape (samples, rows, cols, channels)
-        mask: 4D tensor with shape (samples, rows, cols, 1)
+        features: 4D tensor with shape (batch_size, rows, cols, channels)
+        mask: 4D tensor with shape (batch_size, rows, cols, 1)
             If no mask is provided, all input pixels with features unequal 
             to zero are considered as valid.
     
@@ -191,9 +212,9 @@ class PartialConv2D(Layer):
             mask or as float values.
     
     # Input shape
-        features: 4D tensor with shape (samples, rows, cols, channels)
-        mask: 4D tensor with shape (samples, rows, cols, channels)
-            If the shape is (samples, rows, cols, 1), the mask is repeated 
+        features: 4D tensor with shape (batch_size, rows, cols, channels)
+        mask: 4D tensor with shape (batch_size, rows, cols, channels)
+            If the shape is (batch_size, rows, cols, 1), the mask is repeated 
             for each channel. If no mask is provided, all input elements 
             unequal to zero are considered as valid.
     
@@ -360,10 +381,10 @@ class DepthwiseConv2D(Layer):
                  strides=(1, 1),
                  padding='valid',
                  #data_format=None,
-                 dilation_rate=(1, 1),
-                 #activation=None,
+                 dilation_rate=(1, 1), # TODO
+                 #activation=None, # TODO
                  use_bias=False,
-                 kernel_initializer='glorot_uniform',
+                 kernel_initializer=depthwiseconv_init_relu,
                  bias_initializer='zeros',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -393,7 +414,7 @@ class DepthwiseConv2D(Layer):
         else:
             feature_shape = input_shape
         
-        kernel_shape = [*self.kernel_size, feature_shape[-1], self.channel_multiplier]
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.channel_multiplier)
         
         self.kernel = self.add_weight(name='kernel',
                                       shape=kernel_shape,
@@ -421,7 +442,7 @@ class DepthwiseConv2D(Layer):
         else:
             features = inputs
         
-        strides = [1, self.strides[0], self.strides[1], 1]
+        strides = (1, self.strides[0], self.strides[1], 1)
         features = tf.nn.depthwise_conv2d(features, self.kernel, strides, self.padding.upper())
         
         if self.use_bias:
@@ -538,10 +559,10 @@ class AddCoords2D(Layer):
         with_r: Boolean flag, whether the r coordinate is added or not. See paper for more details.
     
     # Input shape
-        4D tensor with shape (samples, rows, cols, channels)
+        featurs: 4D tensor with shape (batch_size, rows, cols, channels)
 
     # Output shape
-        same as input except channels + 2, channels + 3 if with_r is True
+        featurs: same as input except channels + 2, channels + 3 if with_r is True
     
     # Example
         x = Conv2D(32, 3, padding='same', activation='relu')(x)
@@ -556,9 +577,6 @@ class AddCoords2D(Layer):
         self.with_r = with_r
         
     def call(self, input_tensor):
-        """
-        input_tensor: (batch_size, x_dim, y_dim, c)
-        """
         input_shape = tf.shape(input_tensor)
         batch_size = input_shape[0]
         x_dim = input_shape[1]
@@ -639,8 +657,13 @@ class Conv2DWeightNorm(Conv2D):
         self.kernel = self.kernel / K.sqrt(square_sum + self.eps) * self.wn_g
 
 
-def Resize2DBilinear(size):
-    return Lambda(lambda x: tf.image.resize(x, size, method='bilinear'))
+def Resize2D(size, method='bilinear'):
+    """Spatial resizing layer.
+    
+    # Arguments
+        size: spatial output size (rows, cols)
+        method: 'bilinear', 'bicubic', 'nearest', ...
+        
+    """
+    return Lambda(lambda x: tf.image.resize(x, size, method=method))
 
-def Resize2DNearest(size):
-    return Lambda(lambda x: tf.image.resize(x, size, method='nearest'))

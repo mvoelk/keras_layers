@@ -1,7 +1,7 @@
 # Various Keras Layers that can be used with TensorFlow 2.x
 
 ## SparseConv2D and PartialConv2D
-Sparse/Partial Convolution layers allow CNNs to process sparse sensory data by making the convolution operation invariant against sparsity. The sparsity-related information is propagate through the network and the layer output is normalized depending on the number of information-carrying elements in the convolution window.
+Sparse/Partial Convolution layers allow CNNs to process sparse sensory data by making the convolution operation invariant against the sparsity. The sparsity-related information is propagate through the network and the layer output is normalized depending on the number of information-carrying elements in the convolution window.
 
 The layers come with some extensions compared to the original version proposed in the paper:
 - SparseConv2D was changed to be consistent with Conv2D initializers, which leads to better convergence behavior
