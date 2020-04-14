@@ -24,3 +24,13 @@ SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation
 CoordConv adds the spatial information about the location where the convolution kernel is applied as additional features to its input.
 
 An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution [arXiv:1807.03247](https://arxiv.org/abs/1807.03247)
+
+## Blur2D
+Blurring can be used as replacement for MaxPool2D or AvgPool2D. It anti-aliases the feature maps and suppresses high frequencies resulting from downsampling with max pooling.
+
+The layers come with changes compared to the original implementation:
+- boundary effects are handled more properly, similar as in AvgPool2D
+
+Why do deep convolutional networks generalize so poorly to small image transformations? [arXiv:1805.12177](https://arxiv.org/abs/1805.12177)  
+Making Convolutional Networks Shift-Invariant Again [arXiv:1904.11486](https://arxiv.org/abs/1904.11486)
+

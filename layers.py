@@ -369,7 +369,7 @@ class DepthwiseConv2D(Layer):
     """2D depthwise convolution layer.
     
     # Notes
-        A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent 
+        A DepthwiseConv2D layer followed by an 1x1 Conv2D layer is equivalent
         to the SeparableConv2D layer provided by Keras.
     
     # References
@@ -666,4 +666,71 @@ def Resize2D(size, method='bilinear'):
         
     """
     return Lambda(lambda x: tf.image.resize(x, size, method=method))
+
+
+class Blur2D(Layer):
+    """2D Blur Layer as used in Antialiased CNNs for Subsampling
+
+    # Notes
+        The layer handles boundary effects similar to AvgPool2D.
+
+    # References
+        [Making Convolutional Networks Shift-Invariant Again](https://arxiv.org/abs/1904.11486)
+
+    # related code
+        https://github.com/adobe/antialiased-cnns
+        https://github.com/adobe/antialiased-cnns/issues/10
+    """
+    def __init__(self, filter_size=3, strides=2, padding='valid', **kwargs):
+        rank = 2
+        self.filter_size = filter_size
+        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
+        self.padding = conv_utils.normalize_padding(padding)
+
+        if self.filter_size == 1:
+            self.a = np.array([1.,])
+        elif self.filter_size == 2:
+            self.a = np.array([1., 1.])
+        elif self.filter_size == 3:
+            self.a = np.array([1., 2., 1.])
+        elif self.filter_size == 4:
+            self.a = np.array([1., 3., 3., 1.])
+        elif self.filter_size == 5:
+            self.a = np.array([1., 4., 6., 4., 1.])
+        elif self.filter_size == 6:
+            self.a = np.array([1., 5., 10., 10., 5., 1.])
+        elif self.filter_size == 7:
+            self.a = np.array([1., 6., 15., 20., 15., 6., 1.])
+
+        super(Blur2D, self).__init__(**kwargs)
+
+    def compute_output_shape(self, input_shape):
+        feature_shape = input_shape
+        space = feature_shape[1:-1]
+
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+
+        feature_shape = [feature_shape[0], *new_space, feature_shape[3]]
+        return feature_shape
+
+    def build(self, input_shape):
+        k = self.a[:,None] * self.a[None,:]
+        k = np.tile(k[:,:,None,None], (1,1,input_shape[-1],1))
+        self.kernel = K.constant(k, dtype=K.floatx())
+
+    def call(self, x):
+        features = K.depthwise_conv2d(x, self.kernel, strides=self.strides, padding=self.padding)
+        # normalize the features
+        mask = tf.ones_like(x)
+        norm = K.depthwise_conv2d(mask, self.kernel, strides=self.strides, padding=self.padding)
+        features = tf.multiply(features, 1./norm)
+        return features
 
