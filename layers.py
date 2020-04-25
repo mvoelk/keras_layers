@@ -50,7 +50,43 @@ def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     return K.constant(v, dtype=dtype)
 
 
-class SparseConv2D(Layer):
+class Covn2DBaseLayer(Layer):
+    def __init__(self,
+                 kernel_size,
+                 strides=(1, 1),
+                 padding='valid',
+                 #data_format=None,
+                 dilation_rate=(1, 1),
+                 activation=None,
+                 use_bias=False,
+                 kernel_initializer='glorot_uniform',
+                 kernel_regularizer=None,
+                 kernel_constraint=None,
+                 bias_initializer='zeros',
+                 bias_regularizer=None,
+                 bias_constraint=None,
+                 activity_regularizer=None,
+                 **kwargs):
+
+        super(Covn2DBaseLayer, self).__init__(
+            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
+
+        self.rank = rank = 2
+        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
+        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
+        self.padding = conv_utils.normalize_padding(padding)
+        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
+        self.activation = activations.get(activation)
+        self.use_bias = use_bias
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.bias_constraint = constraints.get(bias_constraint)
+
+
+class SparseConv2D(Covn2DBaseLayer):
     """2D Sparse Convolution layer for sparse input data.
     
     # Arguments
@@ -77,41 +113,14 @@ class SparseConv2D(Layer):
     # References
         [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
     """
-    def __init__(self,
-                 filters,
-                 kernel_size,
-                 strides=(1, 1),
-                 padding='valid',
-                 #data_format=None,
-                 dilation_rate=(1, 1),
-                 activation=None,
-                 use_bias=True,
+    def __init__(self, filters, kernel_size,
                  kernel_initializer=conv_init_relu,
-                 bias_initializer='zeros',
-                 kernel_regularizer=None,
-                 bias_regularizer=None,
-                 activity_regularizer=None,
-                 kernel_constraint=None,
-                 bias_constraint=None,
                  binary=True,
                  **kwargs):
-        super(SparseConv2D, self).__init__(
-            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
         
-        rank = 2
+        super(SparseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        
         self.filters = filters
-        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
-        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
-        self.padding = conv_utils.normalize_padding(padding)
-        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
-        self.activation = activations.get(activation)
-        self.use_bias = use_bias
-        self.kernel_initializer = initializers.get(kernel_initializer)
-        self.bias_initializer = initializers.get(bias_initializer)
-        self.kernel_regularizer = regularizers.get(kernel_regularizer)
-        self.bias_regularizer = regularizers.get(bias_regularizer)
-        self.kernel_constraint = constraints.get(kernel_constraint)
-        self.bias_constraint = constraints.get(bias_constraint)
         self.binary = binary
     
     def build(self, input_shape):
@@ -203,7 +212,7 @@ class SparseConv2D(Layer):
         return [feature_shape, mask_shape]
 
 
-class PartialConv2D(Layer):
+class PartialConv2D(Covn2DBaseLayer):
     """2D Partial Convolution layer for sparse input data.
         
     # Arguments
@@ -234,41 +243,14 @@ class PartialConv2D(Layer):
         [Image Inpainting for Irregular Holes Using Partial Convolutions](https://arxiv.org/abs/1804.07723)
         [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
     """
-    def __init__(self,
-                 filters,
-                 kernel_size,
-                 strides=(1, 1),
-                 padding='valid',
-                 #data_format=None,
-                 dilation_rate=(1, 1),
-                 activation=None,
-                 use_bias=True,
+    def __init__(self, filters, kernel_size,
                  kernel_initializer=conv_init_relu,
-                 bias_initializer='zeros',
-                 kernel_regularizer=None,
-                 bias_regularizer=None,
-                 activity_regularizer=None,
-                 kernel_constraint=None,
-                 bias_constraint=None,
                  binary=True,
                  **kwargs):
-        super(PartialConv2D, self).__init__(
-            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
         
-        rank = 2
+        super(PartialConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        
         self.filters = filters
-        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
-        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
-        self.padding = conv_utils.normalize_padding(padding)
-        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
-        self.activation = activations.get(activation)
-        self.use_bias = use_bias
-        self.kernel_initializer = initializers.get(kernel_initializer)
-        self.bias_initializer = initializers.get(bias_initializer)
-        self.kernel_regularizer = regularizers.get(kernel_regularizer)
-        self.bias_regularizer = regularizers.get(bias_regularizer)
-        self.kernel_constraint = constraints.get(kernel_constraint)
-        self.bias_constraint = constraints.get(bias_constraint)
         self.binary = binary
     
     def build(self, input_shape):
@@ -365,7 +347,7 @@ class PartialConv2D(Layer):
         return [feature_shape, mask_shape]
 
 
-class DepthwiseConv2D(Layer):
+class DepthwiseConv2D(Covn2DBaseLayer):
     """2D depthwise convolution layer.
     
     # Notes
@@ -375,46 +357,20 @@ class DepthwiseConv2D(Layer):
     # References
         [Xception: Deep Learning with Depthwise Separable Convolutions](http://arxiv.org/abs/1610.02357)
     """
-    def __init__(self,
-                 channel_multiplier,
-                 kernel_size,
-                 strides=(1, 1),
-                 padding='valid',
-                 #data_format=None,
-                 dilation_rate=(1, 1), # TODO
-                 #activation=None, # TODO
-                 use_bias=False,
+    def __init__(self, depth_multiplier, kernel_size,
                  kernel_initializer=depthwiseconv_init_relu,
-                 bias_initializer='zeros',
-                 kernel_regularizer=None,
-                 bias_regularizer=None,
-                 #activity_regularizer=None,
-                 kernel_constraint=None,
-                 bias_constraint=None,
                  **kwargs):
-        super(DepthwiseConv2D, self).__init__(**kwargs)
+        super(DepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
         
-        rank = 2
-        self.channel_multiplier = channel_multiplier
-        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
-        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
-        self.padding = conv_utils.normalize_padding(padding)
-        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
-        self.use_bias = use_bias
-        self.kernel_initializer = initializers.get(kernel_initializer)
-        self.bias_initializer = initializers.get(bias_initializer)
-        self.kernel_regularizer = regularizers.get(kernel_regularizer)
-        self.bias_regularizer = regularizers.get(bias_regularizer)
-        self.kernel_constraint = constraints.get(kernel_constraint)
-        self.bias_constraint = constraints.get(bias_constraint)
-    
+        self.depth_multiplier = depth_multiplier
+        
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
         else:
             feature_shape = input_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.channel_multiplier)
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
         
         self.kernel = self.add_weight(name='kernel',
                                       shape=kernel_shape,
@@ -425,7 +381,7 @@ class DepthwiseConv2D(Layer):
                                       dtype=self.dtype)
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
-                                        shape=(feature_shape[-1]*self.channel_multiplier,),
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
                                         initializer=self.bias_initializer,
                                         regularizer=self.bias_regularizer,
                                         constraint=self.bias_constraint,
@@ -442,11 +398,16 @@ class DepthwiseConv2D(Layer):
         else:
             features = inputs
         
-        strides = (1, self.strides[0], self.strides[1], 1)
-        features = tf.nn.depthwise_conv2d(features, self.kernel, strides, self.padding.upper())
+        features = K.depthwise_conv2d(features, self.kernel,
+                                      strides=self.strides,
+                                      padding=self.padding,
+                                      dilation_rate=self.dilation_rate)
         
         if self.use_bias:
             features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
         
         return features
     
@@ -467,7 +428,7 @@ class DepthwiseConv2D(Layer):
                 dilation=self.dilation_rate[i])
             new_space.append(new_dim)
         
-        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.channel_multiplier]
+        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
         
         return feature_shape
 
