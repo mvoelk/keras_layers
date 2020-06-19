@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.layers import Layer, Lambda, Conv2D
+from tensorflow.python.keras.layers import Layer, Lambda
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints, activations
 from tensorflow.python.keras.utils import conv_utils
@@ -84,6 +84,84 @@ class Covn2DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+
+
+class Conv2D(Covn2DBaseLayer):
+    """Conv2D Layer with Weight Normalization.
+    
+    # Arguments
+        They are the same as for the normal Conv2D layer.
+        weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        
+    # References
+        [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
+    """
+    def __init__(self, filters, kernel_size, weightnorm=False, eps=1e-6, **kwargs):
+        super(Conv2D, self).__init__(kernel_size, **kwargs)
+        
+        self.filters = filters
+        self.weightnorm = weightnorm
+        self.eps = eps
+    
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(self.filters,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        super(Conv2D, self).build(input_shape)
+        
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+        else:
+            features = inputs
+            
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
+            kernel = self.kernel / norm * self.wn_g
+        else:
+            kernel = self.kernel
+        
+        features = K.conv2d(features, kernel,
+                            strides=self.strides,
+                            padding=self.padding,
+                            dilation_rate=self.dilation_rate)
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return features
 
 
 class SparseConv2D(Covn2DBaseLayer):
@@ -582,8 +660,8 @@ class LayerNormalization(Layer):
         [Layer Normalization](http://arxiv.org/abs/1607.06450)
     """
     def __init__(self, eps=1e-6, **kwargs):
-        self.eps = eps
         super(LayerNormalization, self).__init__(**kwargs)
+        self.eps = eps
     def build(self, input_shape):
         self.gamma = self.add_weight(name='gamma', shape=input_shape[-1:],
                                      initializer=initializers.Ones(), trainable=True)
@@ -596,26 +674,6 @@ class LayerNormalization(Layer):
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
     def compute_output_shape(self, input_shape):
         return input_shape
-
-
-class Conv2DWeightNorm(Conv2D):
-    """Conv2D Layer with Weight Normalization.
-    
-    # References
-        [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
-    """
-    def __init__(self, filters, kernel_size, eps=1e-6, **kwargs):
-        self.eps = eps
-        super(Conv2DWeightNorm, self).__init__(filters, kernel_size, **kwargs)
-    def build(self, input_shape):
-        super(Conv2DWeightNorm, self).build(input_shape)
-        self.wn_g = self.add_weight(name='wn_g', 
-                            shape=(self.filters,),
-                            dtype=self.dtype, 
-                            initializer=initializers.Ones(), 
-                            trainable=True)
-        square_sum = K.sum(K.square(self.kernel), [0, 1, 2])
-        self.kernel = self.kernel / K.sqrt(square_sum + self.eps) * self.wn_g
 
 
 def Resize2D(size, method='bilinear'):
