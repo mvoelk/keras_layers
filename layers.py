@@ -324,12 +324,16 @@ class PartialConv2D(Covn2DBaseLayer):
     def __init__(self, filters, kernel_size,
                  kernel_initializer=conv_init_relu,
                  binary=True,
+                 weightnorm=False,
+                 eps=1e-6,
                  **kwargs):
         
         super(PartialConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
         
         self.filters = filters
         self.binary = binary
+        self.weightnorm = weightnorm
+        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -352,6 +356,13 @@ class PartialConv2D(Covn2DBaseLayer):
         self.mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         self.mask_kernel = tf.ones(self.mask_kernel_shape)
         self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(self.filters,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
         
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
@@ -376,12 +387,20 @@ class PartialConv2D(Covn2DBaseLayer):
         else:
             # if no mask is provided, get it from the features
             features = inputs
-            mask = tf.where(tf.equal(features, 0), 0.0, 1.0) 
-            
+            mask = tf.where(tf.equal(features, 0), 0.0, 1.0)
+        
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
+            kernel = self.kernel / norm * self.wn_g
+        else:
+            kernel = self.kernel
+        
+        mask_kernel = self.mask_kernel
+        
         features = tf.multiply(features, mask)
-        features = nn_ops.convolution(features, self.kernel, self.padding.upper(), self.strides, self.dilation_rate)
-
-        norm = nn_ops.convolution(mask, self.mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        features = nn_ops.convolution(features, kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        
+        norm = nn_ops.convolution(mask, mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
         
