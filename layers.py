@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Layer, Lambda
+from tensorflow.python.keras.layers import InputSpec
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.keras import initializers, regularizers, constraints, activations
 from tensorflow.python.keras.utils import conv_utils
@@ -51,6 +52,8 @@ def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
 
 
 class Covn2DBaseLayer(Layer):
+    """Basic Conv2D class from which other layers inherit.
+    """
     def __init__(self,
                  kernel_size,
                  strides=(1, 1),
@@ -84,6 +87,25 @@ class Covn2DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+
+    def get_config(self):
+        config = super(Covn2DBaseLayer, self).get_config()
+        config.update({
+            'kernel_size': self.kernel_size,
+            'strides': self.strides,
+            'padding': self.padding,
+            'dilation_rate': self.dilation_rate,
+            'activation': activations.serialize(self.activation),
+            'use_bias': self.use_bias,
+            'kernel_initializer': initializers.serialize(self.kernel_initializer),
+            'kernel_regularizer': regularizers.serialize(self.kernel_regularizer),
+            'kernel_constraint': constraints.serialize(self.kernel_constraint),
+            'bias_initializer': initializers.serialize(self.bias_initializer),
+            'bias_regularizer': regularizers.serialize(self.bias_regularizer),
+            'bias_constraint': constraints.serialize(self.bias_constraint),
+            'activity_regularizer': regularizers.serialize(self.activity_regularizer),
+        })
+        return config
 
 
 class Conv2D(Covn2DBaseLayer):
@@ -442,6 +464,183 @@ class PartialConv2D(Covn2DBaseLayer):
         mask_shape = [feature_shape[0], *new_space, self.filters]
         
         return [feature_shape, mask_shape]
+
+
+class GroupConv2D(Covn2DBaseLayer):
+    """2D Group Convolution layer that shares weights over symmetries.
+    
+    Group Convolution provides discrete rotation equivariance. It reduces the number 
+    of parameters and typically lead to better results.
+    
+    The following two finite groups are supported:
+        Cyclic Group C4 (p4, 4 rotational symmetries)
+        Dihedral Group D4 (p4m, 4 rotational and 4 reflection symmetries)
+    
+    # Arguments
+        They are the same as for the normal Conv2D layer.
+        filters: int, The effective number of filters is this value multiplied by the
+            number of transformations in the group (4 for C4 and 8 for D4)
+        kernel_size: int, Only odd values are supported
+        group: 'C4' or 'D4', Stay with one group when stacking layers
+        
+    # Input shape
+        featurs: 4D tensor with shape (batch_size, rows, cols, in_channels)
+            or 5D tensor with shape (batch_size, rows, cols, num_transformations, in_channels)
+    
+    # Output shape
+        featurs: 5D tensor with shape (batch_size, rows, cols, num_transformations, out_channels)
+    
+    # Notes
+        - BatchNormalization works as expected and shares the statistict over symmetries.
+        - Spatial Pooling can be done via AvgPool3D.
+        - Pooling along the group dimension can be done via MaxPool3D.
+        - Concatenation along the group dimension can be done via Reshape.
+    
+    # Example
+        x = Input((16,16,3))
+        x = GroupConv2D(12, 3, group='D4', padding='same', activation='relu')(x)
+        x = BatchNormalization()(x)
+        x = GroupConv2D(12, 3, group='D4', padding='same', activation='relu')(x)
+        x = AvgPool3D(pool_size=(2,2,1), strides=(2,2,1), padding='same')(x)
+        x = GroupConv2D(12, 3, group='D4', padding='same', activation='relu')(x)
+        x = MaxPool3D(pool_size=(1,1,x.shape[-2]))(x)
+        s = x.shape
+        x = Reshape((s[1],s[2],s[3]*s[4]))(x)
+        
+    # References
+        [Group Equivariant Convolutional Networks](https://arxiv.org/abs/1602.07576)
+        [Rotation Equivariant CNNs for Digital Pathology](https://arxiv.org/abs/1806.03962)
+        
+        https://github.com/tscohen/GrouPy
+        https://github.com/basveeling/keras-gcnn
+    """
+    
+    def __init__(self, filters, kernel_size, group='D4', **kwargs):
+        super(GroupConv2D, self).__init__(kernel_size, **kwargs)
+        
+        if not self.kernel_size[0] == self.kernel_size[1]:
+            raise ValueError('Requires square kernel')
+        if self.kernel_size[0] % 2 != 1:
+            raise ValueError('Requires odd kernel size')
+        
+        group = group.upper()
+        if group == 'C4':
+            self.num_transformations = 4
+        elif group == 'D4':
+            self.num_transformations = 8
+        else:
+            raise ValueError('Unknown group')
+        
+        self.filters = filters
+        self.group = group
+        
+        self.input_spec = InputSpec(min_ndim=4, max_ndim=5)
+    
+    def compute_output_shape(self, input_shape):
+        space = input_shape[1:3]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+        return (input_shape[0], *new_space, self.num_transformations, self.filters)
+
+    def build(self, input_shape):
+        
+        if len(input_shape) == 4:
+            self.first = True
+            num_in_channels = input_shape[-1]
+        else:
+            self.first = False
+            num_in_channels = input_shape[-2] * input_shape[-1]
+        
+        self.kernel = self.add_weight(name='kernel',
+                        shape=(*self.kernel_size, num_in_channels, self.filters),
+                        initializer=self.kernel_initializer,
+                        regularizer=self.kernel_regularizer,
+                        constraint=self.kernel_constraint,
+                        trainable=True,
+                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                            shape=(self.filters,),
+                            initializer=self.bias_initializer,
+                            regularizer=self.bias_regularizer,
+                            constraint=self.bias_constraint,
+                            trainable=True,
+                            dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        self.built = True
+        
+    def call(self, features):
+        ni = features.shape[-1]
+        no = self.filters
+        
+        if self.group == 'C4':
+            nt = 4
+        elif self.group == 'D4':
+            nt = 8
+            
+        nti = 1 if self.first else nt
+        nto = nt
+        
+        k = self.kernel_size[0]
+        t = np.reshape(np.arange(nti*k*k), (nti,k,k))
+        trafos = [np.rot90(t,k,axes=(1, 2)) for k in range(4)]
+        if nt == 8:
+            trafos = trafos + [np.flip(t,1) for t in trafos]
+        self.trafos = trafos = np.array(trafos)
+        
+        # index magic happens here
+        if nti == 1:
+            indices = trafos
+        elif nti == 4:
+            indices = [[trafos[l, (m-l)%4 ,:,:] for m in range(4)] for l in range(4)]
+        elif nti == 8:
+            indices = [[trafos[l, (m-l)%4 if ((m < 4) == (l < 4)) else (m+l)%4+4 ,:,:] for m in range(8)] for l in range(8)]
+        self.indices = indices = np.reshape(indices, (nto,nti,k,k))
+        
+        # transform the kernel
+        kernel = self.kernel
+        kernel = tf.reshape(kernel, (nti*k*k, ni, no))
+        kernel = tf.gather(kernel, indices, axis=0)
+        kernel = tf.reshape(kernel, (nto, nti, k,k, ni, no))
+        kernel = tf.transpose(kernel, (2,3,1,4,0,5))
+        kernel = tf.reshape(kernel, (k,k, nti*ni, nto*no))
+        self.transformed_kernel = kernel
+        
+        if self.first:
+            x = features
+        else:
+            s = features.shape
+            x = tf.reshape(features, (-1,s[1],s[2],s[3]*s[4]))
+
+        x = K.conv2d(x, kernel, strides=self.strides, padding=self.padding, dilation_rate=self.dilation_rate)
+        s = x.shape
+        x = tf.reshape(x, (-1,s[1],s[2],nto,no) )
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return x
+
+    def get_config(self):
+        config = super(GroupConv2D, self).get_config()
+        config.update({
+            'filters': self.filters,
+            'group': self.group,
+        })
+        return config
 
 
 class DepthwiseConv2D(Covn2DBaseLayer):
