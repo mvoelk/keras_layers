@@ -1,14 +1,27 @@
 # Various Keras Layers that can be used with TensorFlow 2.x
 
+## Conv2D
+Standard Convolution layer that comes with some extension.
+- Weight Normalization as an alternative to batch normalization with comparable results.
+
+Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](http://arxiv.org/abs/1602.07868)
+
 ## SparseConv2D and PartialConv2D
 Sparse/Partial Convolution layers allow CNNs to process sparse sensory data by making the convolution operation invariant against the sparsity. The sparsity-related information is propagate through the network and the layer output is normalized depending on the number of information-carrying elements in the convolution window.
 
 The layers come with some extensions compared to the original version proposed in the paper:
 - SparseConv2D was changed to be consistent with Conv2D initializers, which leads to better convergence behavior
 - sparsity can be propagated as float values instead of binary masks, which leads to better convergence behavior and looks more like a diffusion process
+- both layers support Weight Normalization
 
 Sparsity Invariant CNNs [arXiv:1708.06500](https://arxiv.org/abs/1708.06500)  
 Image Inpainting for Irregular Holes Using Partial Convolutions [arXiv:1804.07723](https://arxiv.org/abs/1804.07723)
+
+## GroupConv2D
+Group Convolution provides CNNs with discreter rotation in- and equivariance by sharing weights over symmetries. Depending on the application, Group Convolution leads to better results and fast convergence. The computation performed in the layer is still slower compared to standard convolution.
+
+Group Equivariant Convolutional Networks [arXiv:1602.07576](https://arxiv.org/abs/1602.07576)  
+Rotation Equivariant CNNs for Digital Pathology [arXiv:1806.03962](https://arxiv.org/abs/1806.03962)
 
 ## DepthwiseConv2D
 Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
@@ -33,4 +46,10 @@ The layers come with changes compared to the original implementation:
 
 Why do deep convolutional networks generalize so poorly to small image transformations? [arXiv:1805.12177](https://arxiv.org/abs/1805.12177)  
 Making Convolutional Networks Shift-Invariant Again [arXiv:1904.11486](https://arxiv.org/abs/1904.11486)
+
+## LayerNormalization
+
+Layer Normalization is an alternative to Batch Normalization. The statistic used for normalization is calculated over the channel dimension. Compared to Batch Normalization, the results are usually slightly worse, but it can be applied in situations in which it is difficult to apply Batch Normalization.
+
+Layer Normalization [arXiv:1607.06450](http://arxiv.org/abs/1607.06450)
 
