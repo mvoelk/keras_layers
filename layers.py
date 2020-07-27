@@ -185,6 +185,15 @@ class Conv2D(Covn2DBaseLayer):
         
         return features
 
+    def get_config(self):
+        config = super(Conv2D, self).get_config()
+        config.update({
+            'filters': self.filters,
+            'weightnorm': self.weightnorm,
+            'eps': self.eps,
+        })
+        return config
+
 
 class SparseConv2D(Covn2DBaseLayer):
     """2D Sparse Convolution layer for sparse input data.
@@ -310,6 +319,14 @@ class SparseConv2D(Covn2DBaseLayer):
         mask_shape = [*feature_shape[:-1], 1]
         
         return [feature_shape, mask_shape]
+
+    def get_config(self):
+        config = super(SparseConv2D, self).get_config()
+        config.update({
+            'filters': self.filters,
+            'binary': self.binary,
+        })
+        return config
 
 
 class PartialConv2D(Covn2DBaseLayer):
@@ -464,6 +481,16 @@ class PartialConv2D(Covn2DBaseLayer):
         mask_shape = [feature_shape[0], *new_space, self.filters]
         
         return [feature_shape, mask_shape]
+
+    def get_config(self):
+        config = super(PartialConv2D, self).get_config()
+        config.update({
+            'filters': self.filters,
+            'binary': self.binary,
+            'weightnorm': self.weightnorm,
+            'eps': self.eps,
+        })
+        return config
 
 
 class GroupConv2D(Covn2DBaseLayer):
@@ -727,6 +754,13 @@ class DepthwiseConv2D(Covn2DBaseLayer):
         feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
         
         return feature_shape
+    
+    def get_config(self):
+        config = super(DepthwiseConv2D, self).get_config()
+        config.update({
+            'depth_multiplier': self.depth_multiplier,
+        })
+        return config
 
 
 class MaxPoolingWithArgmax2D(Layer):
@@ -761,6 +795,15 @@ class MaxPoolingWithArgmax2D(Layer):
 
     def compute_mask(self, inputs, mask=None):
         return 2 * [None]
+    
+    def get_config(self):
+        config = super(MaxPoolingWithArgmax2D, self).get_config()
+        config.update({
+            'pool_size': self.pool_size,
+            'strides': self.strides,
+            'padding': self.padding,
+        })
+        return config
 
 
 class MaxUnpooling2D(Layer):
@@ -807,6 +850,13 @@ class MaxUnpooling2D(Layer):
         mask_shape = input_shape[1]
         output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
         return tuple(output_shape)
+    
+    def get_config(self):
+        config = super(MaxUnpooling2D, self).get_config()
+        config.update({
+            'size': self.size,
+        })
+        return config
 
 
 class AddCoords2D(Layer):
@@ -869,6 +919,13 @@ class AddCoords2D(Layer):
         if self.with_r:
             output_shape[3] = output_shape[3] + 1
         return tuple(output_shape)
+    
+    def get_config(self):
+        config = super(AddCoords2D, self).get_config()
+        config.update({
+            'with_r': self.with_r,
+        })
+        return config
 
 
 class LayerNormalization(Layer):
@@ -880,18 +937,28 @@ class LayerNormalization(Layer):
     def __init__(self, eps=1e-6, **kwargs):
         super(LayerNormalization, self).__init__(**kwargs)
         self.eps = eps
+    
     def build(self, input_shape):
         self.gamma = self.add_weight(name='gamma', shape=input_shape[-1:],
                                      initializer=initializers.Ones(), trainable=True)
         self.beta = self.add_weight(name='beta', shape=input_shape[-1:],
                                     initializer=initializers.Zeros(), trainable=True)
         super(LayerNormalization, self).build(input_shape)
+    
     def call(self, x):
         mean = K.mean(x, axis=-1, keepdims=True)
         std = K.std(x, axis=-1, keepdims=True)
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
+    
     def compute_output_shape(self, input_shape):
         return input_shape
+
+    def get_config(self):
+        config = super(LayerNormalization, self).get_config()
+        config.update({
+            'eps': self.eps,
+        })
+        return config
 
 
 def Resize2D(size, method='bilinear'):
@@ -970,4 +1037,13 @@ class Blur2D(Layer):
         norm = K.depthwise_conv2d(mask, self.kernel, strides=self.strides, padding=self.padding)
         features = tf.multiply(features, 1./norm)
         return features
+
+    def get_config(self):
+        config = super(Blur2D, self).get_config()
+        config.update({
+            'filter_size': self.filter_size,
+            'strides': self.strides,
+            'padding': self.padding,
+        })
+        return config
 
