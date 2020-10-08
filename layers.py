@@ -522,6 +522,10 @@ class GroupConv2D(Covn2DBaseLayer):
         - Spatial Pooling can be done via AvgPool3D.
         - Pooling along the group dimension can be done via MaxPool3D.
         - Concatenation along the group dimension can be done via Reshape.
+        - To get a model with the inference time of a normal CNN, you can load the
+          expanded kernel into a normal Conv2D layer. The kernel expansion is
+          done in the 'call' method and the expanded kernel is stored in the
+          'transformed_kernel' attribute.
     
     # Example
         x = Input((16,16,3))
@@ -651,7 +655,8 @@ class GroupConv2D(Covn2DBaseLayer):
 
         x = K.conv2d(x, kernel, strides=self.strides, padding=self.padding, dilation_rate=self.dilation_rate)
         s = x.shape
-        x = tf.reshape(x, (-1,s[1],s[2],nto,no) )
+        x = tf.reshape(x, (-1,s[1],s[2],nto,no))
+        features = x
         
         if self.use_bias:
             features = tf.add(features, self.bias)
@@ -659,7 +664,7 @@ class GroupConv2D(Covn2DBaseLayer):
         if self.activation is not None:
             features = self.activation(features)
         
-        return x
+        return features
 
     def get_config(self):
         config = super(GroupConv2D, self).get_config()

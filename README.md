@@ -18,7 +18,7 @@ Sparsity Invariant CNNs [arXiv:1708.06500](https://arxiv.org/abs/1708.06500)
 Image Inpainting for Irregular Holes Using Partial Convolutions [arXiv:1804.07723](https://arxiv.org/abs/1804.07723)
 
 ## GroupConv2D
-Group Convolution provides CNNs with discreter rotation in- and equivariance by sharing weights over symmetries. Depending on the application, Group Convolution leads to better results and fast convergence. The computation performed in the layer is still slower compared to standard convolution.
+Group Convolution provides CNNs with discreter rotation in- and equivariance by sharing weights over symmetries. Depending on the application, Group Convolution leads to better results and fast convergence. The computation performed in the layer is still slower compared to normal convolution, but the expanded kernel can be loaded into a regular Conv2D layer (thanks to Taco Cohen for pointing that out).
 
 Group Equivariant Convolutional Networks [arXiv:1602.07576](https://arxiv.org/abs/1602.07576)  
 Rotation Equivariant CNNs for Digital Pathology [arXiv:1806.03962](https://arxiv.org/abs/1806.03962)
