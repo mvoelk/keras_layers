@@ -1,8 +1,9 @@
 # Various Keras Layers that can be used with TensorFlow 2.x
 
 ## Conv2D
-Standard Convolution layer that comes with some extension.
-- Weight Normalization as an alternative to batch normalization with comparable results.
+Standard Convolution layer that comes with some changes and extension.
+- bias is disabled by default
+- Weight Normalization as an alternative to batch normalization with comparable results
 
 Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](http://arxiv.org/abs/1602.07868)
 
@@ -18,20 +19,25 @@ Sparsity Invariant CNNs [arXiv:1708.06500](https://arxiv.org/abs/1708.06500)
 Image Inpainting for Irregular Holes Using Partial Convolutions [arXiv:1804.07723](https://arxiv.org/abs/1804.07723)
 
 ## GroupConv2D
-Group Convolution provides CNNs with discreter rotation in- and equivariance by sharing weights over symmetries. Depending on the application, Group Convolution leads to better results and fast convergence. The computation performed in the layer is still slower compared to normal convolution, but the expanded kernel can be loaded into a regular Conv2D layer (thanks to Taco Cohen for pointing that out).
+Group Convolution provides CNNs with discreter rotation in- and equivariance by sharing weights over symmetries. Depending on the application, Group Convolution leads to better results and fast convergence. The computation performed in the layer is still slower compared to normal convolution, but the expanded kernel can be loaded into a regular Conv2D layer. (Thanks to Taco Cohen for pointing that out.)
 
 Group Equivariant Convolutional Networks [arXiv:1602.07576](https://arxiv.org/abs/1602.07576)  
 Rotation Equivariant CNNs for Digital Pathology [arXiv:1806.03962](https://arxiv.org/abs/1806.03962)
 
+## DeformableConv2D
+Deformable Convolution learns input-dependent spacial offsets where the input elements of the convolution are sampled from the input feature map. It can be interpretet as learning an input-dependent receptive field or a dynamic dilation rate. Adding Deformable Convolution usually leads to better object detection and segmentation models.
+
+Deformable Convolutional Networks[arXiv:1703.06211](https://arxiv.org/abs/1703.06211)
+
 ## DepthwiseConv2D
 Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
 
-Xception: Deep Learning with Depthwise Separable Convolutions [arXiv:1610.02357](http://arxiv.org/abs/1610.02357)
+Xception: Deep Learning with Depthwise Separable Convolutions [arXiv:1610.02357](https://arxiv.org/abs/1610.02357)
 
 ## MaxPoolingWithArgmax2D and MaxUnpooling2D
 In convolutional encoder-decoder architectures, one may want to invert the max pooling operation without loosing spatial information. This is exactly what these layers do. MaxPoolingWithArgmax2D is a max pooling layer that addidionally outputs the pooling indices and MaxUnpooling2D uses them for unpooling.
 
-SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation [arXiv:1511.00561](http://arxiv.org/abs/1511.00561)
+SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation [arXiv:1511.00561](https://arxiv.org/abs/1511.00561)
 
 ## AddCoords2D
 CoordConv adds the spatial information about the location where the convolution kernel is applied as additional features to its input.
@@ -53,3 +59,5 @@ Layer Normalization is an alternative to Batch Normalization. The statistic used
 
 Layer Normalization [arXiv:1607.06450](http://arxiv.org/abs/1607.06450)
 
+## Scale
+Learned linear scaling of the features: `scale * x + shift`.
