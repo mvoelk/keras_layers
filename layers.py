@@ -978,7 +978,7 @@ def Resize2D(size, method='bilinear'):
 
 
 class Blur2D(Layer):
-    """2D Blur Layer as used in Antialiased CNNs for Subsampling
+    """2D Blur Layer as used in Antialiased CNNs for Subsampling.
 
     # Notes
         The layer handles boundary effects similar to AvgPool2D.
@@ -1049,6 +1049,81 @@ class Blur2D(Layer):
             'filter_size': self.filter_size,
             'strides': self.strides,
             'padding': self.padding,
+        })
+        return config
+
+
+class Scale(Layer):
+    """Layer to learn a linear feature scaling.
+    """
+    def __init__(self,
+                 use_shift=True,
+                 use_scale=True,
+                 shift_initializer='zeros',
+                 shift_regularizer=None,
+                 shift_constraint=None,
+                 scale_initializer='ones',
+                 scale_regularizer=None,
+                 scale_constraint=None,
+                 **kwargs):
+        super(Scale, self).__init__(**kwargs)
+        
+        self.use_shift = use_shift
+        self.use_scale = use_scale
+        self.shift_initializer = initializers.get(shift_initializer)
+        self.shift_regularizer = regularizers.get(shift_regularizer)
+        self.shift_constraint = constraints.get(shift_constraint)
+        self.scale_initializer = initializers.get(scale_initializer)
+        self.scale_regularizer = regularizers.get(scale_regularizer)
+        self.scale_constraint = constraints.get(scale_constraint)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def build(self, input_shape):
+        if self.use_shift:
+            self.shift = self.add_variable(name='shift',
+                                          shape=(input_shape[-1],),
+                                          initializer=self.shift_initializer,
+                                          regularizer=self.shift_regularizer,
+                                          constraint=self.shift_constraint,
+                                          trainable=True,
+                                          dtype=self.dtype)
+        else:
+            self.shfit = None
+        
+        if self.use_scale:
+            self.scale = self.add_variable(name='scale',
+                                          shape=(input_shape[-1],),
+                                          initializer=self.scale_initializer,
+                                          regularizer=self.scale_regularizer,
+                                          constraint=self.scale_constraint,
+                                          trainable=True,
+                                          dtype=self.dtype)
+        else:
+            self.scale = None
+
+        super(Scale, self).build(input_shape)
+    
+    def call(self, inputs, **kwargs):
+        x = inputs
+        if self.use_scale:
+            x = tf.multiply(x, self.scale)
+        if self.use_shift:
+            x = tf.add(x, self.shift)
+        return x
+
+    def get_config(self):
+        config = super(Scale, self).get_config()
+        config.update({
+            'use_shift': self.use_shift,
+            'use_scale': self.use_scale,
+            'shift_initializer': initializers.serialize(self.shift_initializer),
+            'shift_regularizer': regularizers.serialize(self.shift_regularizer),
+            'shift_constraint': constraints.serialize(self.shift_constraint),
+            'scale_initializer': initializers.serialize(self.scale_initializer),
+            'scale_regularizer': regularizers.serialize(self.scale_regularizer),
+            'scale_constraint': constraints.serialize(self.scale_constraint),
         })
         return config
 
