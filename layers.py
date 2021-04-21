@@ -1118,35 +1118,22 @@ class AddCoords2D(Layer):
         super(AddCoords2D, self).__init__(**kwargs)
         self.with_r = with_r
         
-    def call(self, input_tensor):
-        input_shape = tf.shape(input_tensor)
-        batch_size = input_shape[0]
-        x_dim = input_shape[1]
-        y_dim = input_shape[2]
+    def call(self, features):
+        y_dim = features.shape[1]
+        x_dim = features.shape[2]
         
-        xx_ones = tf.ones([batch_size, x_dim], dtype=tf.int32)
-        xx_ones = tf.expand_dims(xx_ones, -1)
-        xx_range = tf.tile(tf.expand_dims(tf.range(x_dim), 0), [batch_size, 1])
-        xx_range = tf.expand_dims(xx_range, 1)
-        xx_channel = tf.matmul(xx_ones, xx_range)
-        xx_channel = tf.expand_dims(xx_channel, -1)
-        xx_channel = tf.cast(xx_channel, 'float32') / (tf.cast(x_dim, 'float32') - 1)
-        xx_channel = xx_channel*2 - 1
+        ones = tf.ones_like(features[:,:,:,:1])
+        y_range = tf.range(y_dim, dtype='float32') / tf.cast(y_dim-1, 'float32') * 2 - 1
+        x_range = tf.range(x_dim, dtype='float32') / tf.cast(x_dim-1, 'float32') * 2 - 1
+        yy = ones * y_range[None, :, None, None]
+        xx = ones * x_range[None, None, :, None]
         
-        yy_ones = tf.ones([batch_size, y_dim], dtype=tf.int32)
-        yy_ones = tf.expand_dims(yy_ones, 1)
-        yy_range = tf.tile(tf.expand_dims(tf.range(y_dim), 0), [batch_size, 1])
-        yy_range = tf.expand_dims(yy_range, -1)
-        yy_channel = tf.matmul(yy_range, yy_ones)
-        yy_channel = tf.expand_dims(yy_channel, -1)
-        yy_channel = tf.cast(yy_channel, 'float32') / (tf.cast(x_dim, 'float32') - 1)
-        yy_channel = yy_channel*2 - 1
-        
-        output_tensor = tf.concat([input_tensor, xx_channel, yy_channel], axis=-1)
         if self.with_r:
-            rr = tf.sqrt(tf.square(xx_channel-0.5) + tf.square(yy_channel-0.5))
-            output_tensor = tf.concat([output_tensor, rr], axis=-1)
-        return output_tensor
+            rr = tf.sqrt(tf.square(yy-0.5) + tf.square(xx-0.5))
+            features = tf.concat([features, yy, xx, rr], axis=-1)
+        else:
+            features = tf.concat([features, yy, xx], axis=-1)
+        return features
     
     def compute_output_shape(self, input_shape):
         output_shape = list(input_shape)
