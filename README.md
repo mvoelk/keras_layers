@@ -40,9 +40,10 @@ In convolutional encoder-decoder architectures, one may want to invert the max p
 SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation [arXiv:1511.00561](https://arxiv.org/abs/1511.00561)
 
 ## AddCoords2D
-CoordConv adds the spatial information about the location where the convolution kernel is applied as additional features to its input.
+CoordConv adds the spatial information about the location where the convolution kernel is applied as additional features to its input. A fairly similar approach is known as Semi-convolutional Operators.
 
-An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution [arXiv:1807.03247](https://arxiv.org/abs/1807.03247)
+An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution [arXiv:1807.03247](https://arxiv.org/abs/1807.03247)  
+Semi-convolutional Operators for Instance Segmentation [arXiv:1807.10712](https://arxiv.org/abs/1807.10712)
 
 ## Blur2D
 Blurring can be used as replacement for MaxPool2D or AvgPool2D. It anti-aliases the feature maps and suppresses high frequencies resulting from downsampling with max pooling.

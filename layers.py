@@ -1111,8 +1111,12 @@ class AddCoords2D(Layer):
         x = AddCoords2D()(x)
         x = Conv2D(32, 3, padding='same', activation='relu')(x)
     
+    # Notes
+        Semi-convolutional Operators is an approach that is closely related to CoordConv.
+    
     # References
         [An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution](http://arxiv.org/abs/1807.03247)
+        [Semi-convolutional Operators for Instance Segmentation](https://arxiv.org/abs/1807.10712)
     """
     def __init__(self, with_r=False, **kwargs):
         super(AddCoords2D, self).__init__(**kwargs)
