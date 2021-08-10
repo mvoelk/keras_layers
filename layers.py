@@ -1187,6 +1187,39 @@ class LayerNormalization(Layer):
         return config
 
 
+class InstanceNormalization(Layer):
+    """Instance Normalization Layer.
+    
+    # References
+        [Instance Normalization: The Missing Ingredient for Fast Stylization](https://arxiv.org/abs/1607.08022)
+    """
+    def __init__(self, eps=1e-6, **kwargs):
+        super(InstanceNormalization, self).__init__(**kwargs)
+        self.eps = eps
+    
+    def build(self, input_shape):
+        self.gamma = self.add_weight(name='gamma', shape=input_shape[-1:],
+                                     initializer=initializers.Ones(), trainable=True)
+        self.beta = self.add_weight(name='beta', shape=input_shape[-1:],
+                                    initializer=initializers.Zeros(), trainable=True)
+        super(InstanceNormalization, self).build(input_shape)
+    
+    def call(self, x):
+        mean = K.mean(x, axis=list(range(len(x.shape))[1:-1]), keepdims=True)
+        std = K.std(x, axis=list(range(len(x.shape))[1:-1]), keepdims=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def get_config(self):
+        config = super(InstanceNormalization, self).get_config()
+        config.update({
+            'eps': self.eps,
+        })
+        return config
+
+
 def Resize2D(size, method='bilinear'):
     """Spatial resizing layer.
     

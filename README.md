@@ -60,5 +60,11 @@ Layer Normalization is an alternative to Batch Normalization. The statistic used
 
 Layer Normalization [arXiv:1607.06450](http://arxiv.org/abs/1607.06450)
 
+## InstanceNormalization
+
+Instance Normalization is an alternative to Batch Normalization and has interesting properties regarding style transfer. The statistic used for normalization is calculated per instance over the spatial dimensions.
+
+Instance Normalization: The Missing Ingredient for Fast Stylization [arXiv:1607.08022](https://arxiv.org/abs/1607.08022)
+
 ## Scale
 Learned linear scaling of the features: `scale * x + shift`.
