@@ -67,4 +67,4 @@ Instance Normalization is an alternative to Batch Normalization and has interest
 Instance Normalization: The Missing Ingredient for Fast Stylization [arXiv:1607.08022](https://arxiv.org/abs/1607.08022)
 
 ## Scale
-Learned linear scaling of the features: `scale * x + shift`.
+Learned affine scaling of the features: `scale * x + shift`.

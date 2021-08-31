@@ -1172,8 +1172,8 @@ class LayerNormalization(Layer):
         super(LayerNormalization, self).build(input_shape)
     
     def call(self, x):
-        mean = K.mean(x, axis=-1, keepdims=True)
-        std = K.std(x, axis=-1, keepdims=True)
+        mean = tf.stop_gradient(K.mean(x, axis=-1, keepdims=True))
+        std = tf.stop_gradient(K.std(x, axis=-1, keepdims=True))
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
     
     def compute_output_shape(self, input_shape):
@@ -1205,8 +1205,9 @@ class InstanceNormalization(Layer):
         super(InstanceNormalization, self).build(input_shape)
     
     def call(self, x):
-        mean = K.mean(x, axis=list(range(len(x.shape))[1:-1]), keepdims=True)
-        std = K.std(x, axis=list(range(len(x.shape))[1:-1]), keepdims=True)
+        axis = list(range(len(x.shape))[1:-1])
+        mean = tf.stop_gradient(K.mean(x, axis=axis, keepdims=True))
+        std = tf.stop_gradient(K.std(x, axis=axis, keepdims=True))
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
     
     def compute_output_shape(self, input_shape):
@@ -1308,7 +1309,7 @@ class Blur2D(Layer):
 
 
 class Scale(Layer):
-    """Layer to learn a linear feature scaling.
+    """Layer to learn a affine feature scaling.
     """
     def __init__(self,
                  use_shift=True,
