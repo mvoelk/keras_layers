@@ -51,7 +51,7 @@ def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     return K.constant(v, dtype=dtype)
 
 
-class Covn2DBaseLayer(Layer):
+class Conv2DBaseLayer(Layer):
     """Basic Conv2D class from which other layers inherit.
     """
     def __init__(self,
@@ -71,7 +71,7 @@ class Covn2DBaseLayer(Layer):
                  activity_regularizer=None,
                  **kwargs):
 
-        super(Covn2DBaseLayer, self).__init__(
+        super(Conv2DBaseLayer, self).__init__(
             activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
 
         self.rank = rank = 2
@@ -89,7 +89,7 @@ class Covn2DBaseLayer(Layer):
         self.bias_constraint = constraints.get(bias_constraint)
 
     def get_config(self):
-        config = super(Covn2DBaseLayer, self).get_config()
+        config = super(Conv2DBaseLayer, self).get_config()
         config.update({
             'kernel_size': self.kernel_size,
             'strides': self.strides,
@@ -108,7 +108,7 @@ class Covn2DBaseLayer(Layer):
         return config
 
 
-class Conv2D(Covn2DBaseLayer):
+class Conv2D(Conv2DBaseLayer):
     """Conv2D Layer with Weight Normalization.
     
     # Arguments
@@ -195,7 +195,7 @@ class Conv2D(Covn2DBaseLayer):
         return config
 
 
-class SparseConv2D(Covn2DBaseLayer):
+class SparseConv2D(Conv2DBaseLayer):
     """2D Sparse Convolution layer for sparse input data.
     
     # Arguments
@@ -329,7 +329,7 @@ class SparseConv2D(Covn2DBaseLayer):
         return config
 
 
-class PartialConv2D(Covn2DBaseLayer):
+class PartialConv2D(Conv2DBaseLayer):
     """2D Partial Convolution layer for sparse input data.
         
     # Arguments
@@ -493,7 +493,7 @@ class PartialConv2D(Covn2DBaseLayer):
         return config
 
 
-class GroupConv2D(Covn2DBaseLayer):
+class GroupConv2D(Conv2DBaseLayer):
     """2D Group Convolution layer that shares weights over symmetries.
     
     Group Convolution provides discrete rotation equivariance. It reduces the number 
@@ -675,7 +675,7 @@ class GroupConv2D(Covn2DBaseLayer):
         return config
 
 
-class DeformableConv2D(Covn2DBaseLayer):
+class DeformableConv2D(Conv2DBaseLayer):
     """2D Deformable Convolution layer that learns the spatial offsets where 
     the input elements of the convolution are sampled.
     
@@ -905,7 +905,7 @@ class DeformableConv2D(Covn2DBaseLayer):
         return tf.gather_nd(inputs, pixel_idx)
 
 
-class DepthwiseConv2D(Covn2DBaseLayer):
+class DepthwiseConv2D(Conv2DBaseLayer):
     """2D depthwise convolution layer.
     
     # Notes
