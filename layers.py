@@ -2,12 +2,11 @@
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.layers import Layer, Lambda
-from tensorflow.python.keras.layers import InputSpec
-from tensorflow.python.ops import nn_ops
-from tensorflow.python.keras import initializers, regularizers, constraints, activations
-from tensorflow.python.keras.utils import conv_utils
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import Layer, Lambda
+from tensorflow.keras.layers import InputSpec
+from tensorflow.keras import initializers, regularizers, constraints, activations
+from keras.utils import conv_utils
 
 
 def gaussian_init(shape, dtype=None, partition_info=None):
@@ -272,11 +271,17 @@ class SparseConv2D(Conv2DBaseLayer):
             # if no mask is provided, get it from the features
             features = inputs
             mask = tf.where(tf.equal(tf.reduce_sum(features, axis=-1, keepdims=True), 0), 0.0, 1.0) 
-            
-        features = tf.multiply(features, mask)
-        features = nn_ops.convolution(features, self.kernel, self.padding.upper(), self.strides, self.dilation_rate)
 
-        norm = nn_ops.convolution(mask, self.mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        features = tf.multiply(features, mask)
+        features = K.conv2d(features, self.kernel,
+                            strides=self.strides,
+                            padding=self.padding,
+                            dilation_rate=self.dilation_rate)
+
+        norm = K.conv2d(mask, self.mask_kernel,
+                        strides=self.strides,
+                        padding=self.padding,
+                        dilation_rate=self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
         
@@ -437,9 +442,15 @@ class PartialConv2D(Conv2DBaseLayer):
         mask_kernel = self.mask_kernel
         
         features = tf.multiply(features, mask)
-        features = nn_ops.convolution(features, kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        features = K.conv2d(features, kernel,
+                            strides=self.strides,
+                            padding=self.padding,
+                            dilation_rate=self.dilation_rate)
         
-        norm = nn_ops.convolution(mask, mask_kernel, self.padding.upper(), self.strides, self.dilation_rate)
+        norm = K.conv2d(mask, mask_kernel,
+                        strides=self.strides,
+                        padding=self.padding,
+                        dilation_rate=self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
         
@@ -1018,7 +1029,7 @@ class MaxPoolingWithArgmax2D(Layer):
         ksize = [1, self.pool_size[0], self.pool_size[1], 1]
         strides = [1, self.strides[0], self.strides[1], 1]
         padding = self.padding.upper()
-        output, argmax = nn_ops.max_pool_with_argmax(inputs, ksize, strides, padding)
+        output, argmax = tf.nn.max_pool_with_argmax(inputs, ksize, strides, padding)
         argmax = tf.cast(argmax, K.floatx())
         return [output, argmax]
     
