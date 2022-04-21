@@ -504,6 +504,148 @@ class PartialConv2D(Conv2DBaseLayer):
         return config
 
 
+class PartialDepthwiseConv2D(Conv2DBaseLayer):
+    """see PartialConv2D and DepthwiseConv2D
+    """
+    def __init__(self, depth_multiplier, kernel_size,
+                 kernel_initializer=depthwiseconv_init_relu,
+                 binary=True,
+                 weightnorm=False,
+                 eps=1e-6,
+                 **kwargs):
+        
+        super(PartialDepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        
+        self.depth_multiplier = depth_multiplier
+        self.binary = binary
+        self.weightnorm = weightnorm
+        self.eps = eps
+    
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+            mask_shape = input_shape[1]
+            self.mask_shape = mask_shape
+        else:
+            feature_shape = input_shape
+            self.mask_shape = feature_shape
+        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        
+        self.mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+        self.mask_kernel = tf.ones(self.mask_kernel_shape)
+        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:2])
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        super(PartialDepthwiseConv2D, self).build(input_shape)
+    
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+            mask = inputs[1]
+            # if mask has only one channel, repeat
+            if self.mask_shape[-1] == 1:
+                mask = tf.repeat(mask, tf.shape(features)[-1], axis=-1)
+        else:
+            # if no mask is provided, get it from the features
+            features = inputs
+            mask = tf.where(tf.equal(features, 0), 0.0, 1.0)
+        
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
+            kernel = self.kernel / norm * self.wn_g
+        else:
+            kernel = self.kernel
+        
+        mask_kernel = self.mask_kernel
+        
+        features = tf.multiply(features, mask)
+        features = K.depthwise_conv2d(features, self.kernel,
+                                      strides=self.strides,
+                                      padding=self.padding,
+                                      dilation_rate=self.dilation_rate)
+        
+        norm = K.depthwise_conv2d(mask, mask_kernel,
+                                  strides=self.strides,
+                                  padding=self.padding,
+                                  dilation_rate=self.dilation_rate)
+        
+        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
+        
+        if self.binary:
+            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
+        else:
+            mask = norm / mask_fan_in
+        
+        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
+        
+        features = tf.multiply(features, ratio)
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return [features, mask]
+    
+    def compute_output_shape(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        space = feature_shape[1:-1]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+        
+        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
+        mask_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
+        
+        return [feature_shape, mask_shape]
+    
+    def get_config(self):
+        config = super(PartialDepthwiseConv2D, self).get_config()
+        config.update({
+            'depth_multiplier': self.depth_multiplier,
+            'binary': self.binary,
+            'weightnorm': self.weightnorm,
+            'eps': self.eps,
+        })
+        return config
+
+
 class GroupConv2D(Conv2DBaseLayer):
     """2D Group Convolution layer that shares weights over symmetries.
     
@@ -693,7 +835,7 @@ class DeformableConv2D(Conv2DBaseLayer):
     The layer is basically a updated version of An Jiaoyang's code.
     
     # Notes
-        - A layer does not use a native CUDA kernel which would have better 
+        - The layer does not use a native CUDA kernel which would have better 
           performance https://github.com/tensorflow/addons/issues/179
     
     # References
