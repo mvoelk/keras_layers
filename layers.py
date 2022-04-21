@@ -1070,10 +1070,12 @@ class DepthwiseConv2D(Conv2DBaseLayer):
     """
     def __init__(self, depth_multiplier, kernel_size,
                  kernel_initializer=depthwiseconv_init_relu,
+                 weightnorm=False,
                  **kwargs):
         super(DepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
         
         self.depth_multiplier = depth_multiplier
+        self.weightnorm = weightnorm
         
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -1082,7 +1084,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
         
         kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
-        
+
         self.kernel = self.add_weight(name='kernel',
                                       shape=kernel_shape,
                                       initializer=self.kernel_initializer,
@@ -1090,6 +1092,14 @@ class DepthwiseConv2D(Conv2DBaseLayer):
                                       constraint=self.kernel_constraint,
                                       trainable=True,
                                       dtype=self.dtype)
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
                                         shape=(feature_shape[-1]*self.depth_multiplier,),
@@ -1109,7 +1119,13 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         else:
             features = inputs
         
-        features = K.depthwise_conv2d(features, self.kernel,
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
+            kernel = self.kernel / norm * self.wn_g
+        else:
+            kernel = self.kernel
+        
+        features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
                                       padding=self.padding,
                                       dilation_rate=self.dilation_rate)
@@ -1147,6 +1163,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         config = super(DepthwiseConv2D, self).get_config()
         config.update({
             'depth_multiplier': self.depth_multiplier,
+            'weightnorm': self.weightnorm,
         })
         return config
 

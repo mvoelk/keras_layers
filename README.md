@@ -27,7 +27,7 @@ Rotation Equivariant CNNs for Digital Pathology [arXiv:1806.03962](https://arxiv
 ## DeformableConv2D
 Deformable Convolution learns input-dependent spacial offsets where the input elements of the convolution are sampled from the input feature map. It can be interpretet as learning an input-dependent receptive field or a dynamic dilation rate. Adding Deformable Convolution usually leads to better object detection and segmentation models.
 
-Deformable Convolutional Networks[arXiv:1703.06211](https://arxiv.org/abs/1703.06211)
+Deformable Convolutional Networks [arXiv:1703.06211](https://arxiv.org/abs/1703.06211)
 
 ## DepthwiseConv2D
 Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
