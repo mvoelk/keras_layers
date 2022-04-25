@@ -7,6 +7,11 @@ Standard Convolution layer that comes with some changes and extension.
 
 Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](http://arxiv.org/abs/1602.07868)
 
+## DepthwiseConv2D
+Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
+
+Xception: Deep Learning with Depthwise Separable Convolutions [arXiv:1610.02357](https://arxiv.org/abs/1610.02357)
+
 ## SparseConv2D and PartialConv2D
 Sparse/Partial Convolution layers allow CNNs to process sparse sensory data by making the convolution operation invariant against the sparsity. The sparsity-related information is propagate through the network and the layer output is normalized depending on the number of information-carrying elements in the convolution window.
 
@@ -28,11 +33,6 @@ Rotation Equivariant CNNs for Digital Pathology [arXiv:1806.03962](https://arxiv
 Deformable Convolution learns input-dependent spacial offsets where the input elements of the convolution are sampled from the input feature map. It can be interpretet as learning an input-dependent receptive field or a dynamic dilation rate. Adding Deformable Convolution usually leads to better object detection and segmentation models.
 
 Deformable Convolutional Networks [arXiv:1703.06211](https://arxiv.org/abs/1703.06211)
-
-## DepthwiseConv2D
-Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
-
-Xception: Deep Learning with Depthwise Separable Convolutions [arXiv:1610.02357](https://arxiv.org/abs/1610.02357)
 
 ## MaxPoolingWithArgmax2D and MaxUnpooling2D
 In convolutional encoder-decoder architectures, one may want to invert the max pooling operation without loosing spatial information. This is exactly what these layers do. MaxPoolingWithArgmax2D is a max pooling layer that addidionally outputs the pooling indices and MaxUnpooling2D uses them for unpooling.
@@ -67,4 +67,4 @@ Instance Normalization is an alternative to Batch Normalization and has interest
 Instance Normalization: The Missing Ingredient for Fast Stylization [arXiv:1607.08022](https://arxiv.org/abs/1607.08022)
 
 ## Scale
-Learned affine scaling of the features: `scale * x + shift`.
+Learned affine scaling of the features: `scale * x + shift`. A 1x1 DepthwiseConv2D with bias should do the same.
