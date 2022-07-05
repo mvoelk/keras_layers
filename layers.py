@@ -164,12 +164,12 @@ class Conv2D(Conv2DBaseLayer):
             features = inputs[0]
         else:
             features = inputs
-            
+        
+        kernel = self.kernel
+
         if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
-            kernel = self.kernel / norm * self.wn_g
-        else:
-            kernel = self.kernel
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
+            kernel = kernel / norm * self.wn_g
         
         features = K.conv2d(features, kernel,
                             strides=self.strides,
@@ -382,8 +382,7 @@ class PartialConv2D(Conv2DBaseLayer):
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
-            mask_shape = input_shape[1]
-            self.mask_shape = mask_shape
+            self.mask_shape = input_shape[1]
         else:
             feature_shape = input_shape
             self.mask_shape = feature_shape
@@ -433,13 +432,11 @@ class PartialConv2D(Conv2DBaseLayer):
             features = inputs
             mask = tf.where(tf.equal(features, 0), 0.0, 1.0)
         
-        if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
-            kernel = self.kernel / norm * self.wn_g
-        else:
-            kernel = self.kernel
+        kernel = self.kernel
         
-        mask_kernel = self.mask_kernel
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
+            kernel = kernel / norm * self.wn_g
         
         features = tf.multiply(features, mask)
         features = K.conv2d(features, kernel,
@@ -447,7 +444,7 @@ class PartialConv2D(Conv2DBaseLayer):
                             padding=self.padding,
                             dilation_rate=self.dilation_rate)
         
-        norm = K.conv2d(mask, mask_kernel,
+        norm = K.conv2d(mask, self.mask_kernel,
                         strides=self.strides,
                         padding=self.padding,
                         dilation_rate=self.dilation_rate)
@@ -524,8 +521,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
-            mask_shape = input_shape[1]
-            self.mask_shape = mask_shape
+            self.mask_shape = input_shape[1]
         else:
             feature_shape = input_shape
             self.mask_shape = feature_shape
@@ -575,13 +571,11 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
             features = inputs
             mask = tf.where(tf.equal(features, 0), 0.0, 1.0)
         
+        kernel = self.kernel
+
         if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
-            kernel = self.kernel / norm * self.wn_g
-        else:
-            kernel = self.kernel
-        
-        mask_kernel = self.mask_kernel
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
+            kernel = kernel / norm * self.wn_g
         
         features = tf.multiply(features, mask)
         features = K.depthwise_conv2d(features, kernel,
@@ -589,7 +583,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
                                       padding=self.padding,
                                       dilation_rate=self.dilation_rate)
         
-        norm = K.depthwise_conv2d(mask, mask_kernel,
+        norm = K.depthwise_conv2d(mask, self.mask_kernel,
                                   strides=self.strides,
                                   padding=self.padding,
                                   dilation_rate=self.dilation_rate)
@@ -1121,11 +1115,11 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         else:
             features = inputs
         
+        kernel = self.kernel
+
         if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(self.kernel), (0,1,2)) + self.eps)
-            kernel = self.kernel / norm * self.wn_g
-        else:
-            kernel = self.kernel
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
+            kernel = kernel / norm * self.wn_g
         
         features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
