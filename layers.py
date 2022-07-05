@@ -545,7 +545,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
+                                        shape=(feature_shape[-1],self.depth_multiplier,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
@@ -584,7 +584,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         mask_kernel = self.mask_kernel
         
         features = tf.multiply(features, mask)
-        features = K.depthwise_conv2d(features, self.kernel,
+        features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
                                       padding=self.padding,
                                       dilation_rate=self.dilation_rate)
@@ -1071,12 +1071,14 @@ class DepthwiseConv2D(Conv2DBaseLayer):
     def __init__(self, depth_multiplier, kernel_size,
                  kernel_initializer=depthwiseconv_init_relu,
                  weightnorm=False,
+                 eps=1e-6,
                  **kwargs):
         super(DepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
         
         self.depth_multiplier = depth_multiplier
         self.weightnorm = weightnorm
-        
+        self.eps = eps
+    
     def build(self, input_shape):
         if type(input_shape) is list:
             feature_shape = input_shape[0]
@@ -1095,7 +1097,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
+                                        shape=(feature_shape[-1],self.depth_multiplier,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
@@ -1164,6 +1166,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         config.update({
             'depth_multiplier': self.depth_multiplier,
             'weightnorm': self.weightnorm,
+            'eps': self.eps,
         })
         return config
 
