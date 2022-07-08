@@ -224,12 +224,14 @@ class SparseConv2D(Conv2DBaseLayer):
     def __init__(self, filters, kernel_size,
                  kernel_initializer=conv_init_relu,
                  binary=True,
+                 eps=1e-6,
                  **kwargs):
         
         super(SparseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
         
         self.filters = filters
         self.binary = binary
+        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -285,13 +287,15 @@ class SparseConv2D(Conv2DBaseLayer):
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
         
+        boolean_mask = tf.greater(norm, self.eps)
+
         if self.binary:
-            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
+            mask = tf.where(boolean_mask, 1.0, 0.0)
         else:
             mask = norm / mask_fan_in
         
         #ratio = tf.where(tf.equal(norm,0), 0.0, 1/norm) # Note: The authors use this in the paper, but it would require special initialization...
-        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
+        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
         
         features = tf.multiply(features, ratio)
         
@@ -330,6 +334,7 @@ class SparseConv2D(Conv2DBaseLayer):
         config.update({
             'filters': self.filters,
             'binary': self.binary,
+            'eps': self.eps,
         })
         return config
 
@@ -450,13 +455,15 @@ class PartialConv2D(Conv2DBaseLayer):
                         dilation_rate=self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
+
+        boolean_mask = tf.greater(norm, self.eps)
         
         if self.binary:
-            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
+            mask = tf.where(boolean_mask, 1.0, 0.0)
         else:
             mask = norm / mask_fan_in
         
-        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
+        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
         
         features = tf.multiply(features, ratio)
         
@@ -589,13 +596,15 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
                                   dilation_rate=self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
+
+        boolean_mask = tf.greater(norm, self.eps)
         
         if self.binary:
-            mask = tf.where(tf.greater(norm,0), 1.0, 0.0)
+            mask = tf.where(boolean_mask, 1.0, 0.0)
         else:
             mask = norm / mask_fan_in
         
-        ratio = tf.where(tf.equal(norm,0), 0.0, mask_fan_in/norm)
+        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
         
         features = tf.multiply(features, ratio)
         
