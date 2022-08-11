@@ -227,7 +227,8 @@ class SparseConv2D(Conv2DBaseLayer):
                  eps=1e-6,
                  **kwargs):
         
-        super(SparseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        kwargs['kernel_initializer'] = kernel_initializer
+        super(SparseConv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.binary = binary
@@ -377,7 +378,8 @@ class PartialConv2D(Conv2DBaseLayer):
                  eps=1e-6,
                  **kwargs):
         
-        super(PartialConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        kwargs['kernel_initializer'] = kernel_initializer
+        super(PartialConv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.binary = binary
@@ -518,7 +520,8 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
                  eps=1e-6,
                  **kwargs):
         
-        super(PartialDepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        kwargs['kernel_initializer'] = kernel_initializer
+        super(PartialDepthwiseConv2D, self).__init__(kernel_size, **kwargs)
         
         self.depth_multiplier = depth_multiplier
         self.binary = binary
@@ -548,7 +551,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1],self.depth_multiplier,),
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
@@ -581,8 +584,8 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         kernel = self.kernel
 
         if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
-            kernel = kernel / norm * self.wn_g
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
+            kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
         
         features = tf.multiply(features, mask)
         features = K.depthwise_conv2d(features, kernel,
@@ -1076,7 +1079,9 @@ class DepthwiseConv2D(Conv2DBaseLayer):
                  weightnorm=False,
                  eps=1e-6,
                  **kwargs):
-        super(DepthwiseConv2D, self).__init__(kernel_size, kernel_initializer=kernel_initializer, **kwargs)
+        
+        kwargs['kernel_initializer'] = kernel_initializer
+        super(DepthwiseConv2D, self).__init__(kernel_size, **kwargs)
         
         self.depth_multiplier = depth_multiplier
         self.weightnorm = weightnorm
@@ -1100,7 +1105,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1],self.depth_multiplier,),
+                                        shape=(feature_shape[-1]*self.depth_multiplier,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
@@ -1127,8 +1132,8 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         kernel = self.kernel
 
         if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
-            kernel = kernel / norm * self.wn_g
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
+            kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
         
         features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
