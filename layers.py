@@ -224,6 +224,7 @@ class SparseConv2D(Conv2DBaseLayer):
     def __init__(self, filters, kernel_size,
                  kernel_initializer=conv_init_relu,
                  binary=True,
+                 weightnorm=False,
                  eps=1e-6,
                  **kwargs):
         
@@ -232,6 +233,7 @@ class SparseConv2D(Conv2DBaseLayer):
         
         self.filters = filters
         self.binary = binary
+        self.weightnorm = weightnorm
         self.eps = eps
     
     def build(self, input_shape):
@@ -253,6 +255,13 @@ class SparseConv2D(Conv2DBaseLayer):
         self.mask_kernel = tf.ones(self.mask_kernel_shape)
         self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
         
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(self.filters,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
                                         shape=(self.filters,),
@@ -273,23 +282,29 @@ class SparseConv2D(Conv2DBaseLayer):
         else:
             # if no mask is provided, get it from the features
             features = inputs
-            mask = tf.where(tf.equal(tf.reduce_sum(features, axis=-1, keepdims=True), 0), 0.0, 1.0) 
+            mask = tf.where(tf.equal(tf.reduce_sum(features, axis=-1, keepdims=True), 0), 0.0, 1.0)
 
+        kernel = self.kernel
+        
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
+            kernel = kernel / norm * self.wn_g
+        
         features = tf.multiply(features, mask)
-        features = K.conv2d(features, self.kernel,
+        features = K.conv2d(features, kernel,
                             strides=self.strides,
                             padding=self.padding,
                             dilation_rate=self.dilation_rate)
-
+        
         norm = K.conv2d(mask, self.mask_kernel,
                         strides=self.strides,
                         padding=self.padding,
                         dilation_rate=self.dilation_rate)
         
         mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
-        
-        boolean_mask = tf.greater(norm, self.eps)
 
+        boolean_mask = tf.greater(norm, self.eps)
+        
         if self.binary:
             mask = tf.where(boolean_mask, 1.0, 0.0)
         else:
@@ -326,7 +341,7 @@ class SparseConv2D(Conv2DBaseLayer):
             new_space.append(new_dim)
         
         feature_shape = [feature_shape[0], *new_space, self.filters]
-        mask_shape = [*feature_shape[:-1], 1]
+        mask_shape = [feature_shape[0], *new_space, 1]
         
         return [feature_shape, mask_shape]
 
@@ -335,6 +350,7 @@ class SparseConv2D(Conv2DBaseLayer):
         config.update({
             'filters': self.filters,
             'binary': self.binary,
+            'weightnorm': self.weightnorm,
             'eps': self.eps,
         })
         return config
