@@ -1,11 +1,16 @@
+"""
+SPDX-License-Identifier: MIT
+Copyright © 2018 - 2022 Markus Völk
+Code was taken from https://github.com/mvoelk/keras_layers
+"""
 
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.keras import backend as K
-from tensorflow.keras.layers import Layer, Lambda
-from tensorflow.keras.layers import InputSpec
-from tensorflow.keras import initializers, regularizers, constraints, activations
+from keras import backend as K
+from keras.layers import Layer, Lambda
+from keras.layers import InputSpec
+from keras import initializers, regularizers, constraints, activations
 from keras.utils import conv_utils
 
 
@@ -17,36 +22,36 @@ def gaussian_init(shape, dtype=None, partition_info=None):
 def conv_init_linear(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:3])
-    v = v / (fan_in**0.5)
+    fanin = np.prod(shape[:3])
+    v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:3])
-    v = v / (fan_in**0.5) * 2**0.5
+    fanin = np.prod(shape[:3])
+    v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu2(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:3])
-    v = v / (fan_in**0.5) * 2
+    fanin = np.prod(shape[:3])
+    v = v / (fanin**0.5) * 2
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_linear(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:2])
-    v = v / (fan_in**0.5)
+    fanin = np.prod(shape[:2])
+    v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fan_in = np.prod(shape[:2])
-    v = v / (fan_in**0.5) * 2**0.5
+    fanin = np.prod(shape[:2])
+    v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
 
@@ -130,9 +135,9 @@ class Conv2D(Conv2DBaseLayer):
         else:
             feature_shape = input_shape
         
-        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         self.kernel = self.add_weight(name='kernel',
-                                      shape=self.kernel_shape,
+                                      shape=kernel_shape,
                                       initializer=self.kernel_initializer,
                                       regularizer=self.kernel_regularizer,
                                       constraint=self.kernel_constraint,
@@ -242,18 +247,19 @@ class SparseConv2D(Conv2DBaseLayer):
         else:
             feature_shape = input_shape
         
-        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         self.kernel = self.add_weight(name='kernel',
-                                      shape=self.kernel_shape,
+                                      shape=kernel_shape,
                                       initializer=self.kernel_initializer,
                                       regularizer=self.kernel_regularizer,
                                       constraint=self.kernel_constraint,
                                       trainable=True,
                                       dtype=self.dtype)
         
-        self.mask_kernel_shape = (*self.kernel_size, 1, 1)
-        self.mask_kernel = tf.ones(self.mask_kernel_shape)
-        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
+        mask_kernel_shape = (*self.kernel_size, 1, 1)
+        mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
+        # Note: the authors of the paper initialize the mask kernel with ones
+        self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
@@ -301,26 +307,19 @@ class SparseConv2D(Conv2DBaseLayer):
                         padding=self.padding,
                         dilation_rate=self.dilation_rate)
         
-        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
+        features = tf.math.divide_no_nan(features, norm)
 
-        boolean_mask = tf.greater(norm, self.eps)
-        
-        if self.binary:
-            mask = tf.where(boolean_mask, 1.0, 0.0)
-        else:
-            mask = norm / mask_fan_in
-        
-        #ratio = tf.where(tf.equal(norm,0), 0.0, 1/norm) # Note: The authors use this in the paper, but it would require special initialization...
-        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
-        
-        features = tf.multiply(features, ratio)
-        
         if self.use_bias:
             features = tf.add(features, self.bias)
         
         if self.activation is not None:
             features = self.activation(features)
         
+        if self.binary:
+            mask = tf.where(tf.greater(norm, self.eps), 1.0, 0.0)
+        else:
+            mask = norm
+
         return [features, mask]
     
     def compute_output_shape(self, input_shape):
@@ -410,18 +409,18 @@ class PartialConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
             self.mask_shape = feature_shape
         
-        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         self.kernel = self.add_weight(name='kernel',
-                                      shape=self.kernel_shape,
+                                      shape=kernel_shape,
                                       initializer=self.kernel_initializer,
                                       regularizer=self.kernel_regularizer,
                                       constraint=self.kernel_constraint,
                                       trainable=True,
                                       dtype=self.dtype)
         
-        self.mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-        self.mask_kernel = tf.ones(self.mask_kernel_shape)
-        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:3])
+        mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
+        self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
@@ -472,25 +471,19 @@ class PartialConv2D(Conv2DBaseLayer):
                         padding=self.padding,
                         dilation_rate=self.dilation_rate)
         
-        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
-
-        boolean_mask = tf.greater(norm, self.eps)
-        
-        if self.binary:
-            mask = tf.where(boolean_mask, 1.0, 0.0)
-        else:
-            mask = norm / mask_fan_in
-        
-        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
-        
-        features = tf.multiply(features, ratio)
+        features = tf.math.divide_no_nan(features, norm)
         
         if self.use_bias:
             features = tf.add(features, self.bias)
         
         if self.activation is not None:
             features = self.activation(features)
-        
+
+        if self.binary:
+            mask = tf.where(tf.greater(norm, self.eps), 1.0, 0.0)
+        else:
+            mask = norm
+
         return [features, mask]
     
     def compute_output_shape(self, input_shape):
@@ -552,18 +545,18 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
             self.mask_shape = feature_shape
         
-        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+        kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
         self.kernel = self.add_weight(name='kernel',
-                                      shape=self.kernel_shape,
+                                      shape=kernel_shape,
                                       initializer=self.kernel_initializer,
                                       regularizer=self.kernel_regularizer,
                                       constraint=self.kernel_constraint,
                                       trainable=True,
                                       dtype=self.dtype)
         
-        self.mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
-        self.mask_kernel = tf.ones(self.mask_kernel_shape)
-        self.mask_fan_in = tf.reduce_prod(self.mask_kernel_shape[:2])
+        mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+        mask_fanin = tf.reduce_prod(mask_kernel_shape[:2])
+        self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
         if self.weightnorm:
             self.wn_g = self.add_weight(name='wn_g',
@@ -614,24 +607,18 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
                                   padding=self.padding,
                                   dilation_rate=self.dilation_rate)
         
-        mask_fan_in = tf.cast(self.mask_fan_in, 'float32')
-
-        boolean_mask = tf.greater(norm, self.eps)
-        
-        if self.binary:
-            mask = tf.where(boolean_mask, 1.0, 0.0)
-        else:
-            mask = norm / mask_fan_in
-        
-        ratio = tf.where(boolean_mask, mask_fan_in/norm, 0.0)
-        
-        features = tf.multiply(features, ratio)
+        features = tf.math.divide_no_nan(features, norm)
         
         if self.use_bias:
             features = tf.add(features, self.bias)
         
         if self.activation is not None:
             features = self.activation(features)
+
+        if self.binary:
+            mask = tf.where(tf.greater(norm, self.eps), 1.0, 0.0)
+        else:
+            mask = norm
         
         return [features, mask]
     
