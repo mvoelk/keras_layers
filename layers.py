@@ -55,6 +55,155 @@ def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     return K.constant(v, dtype=dtype)
 
 
+class Conv1DBaseLayer(Layer):
+    """Basic Conv1D class from which other layers inherit.
+    """
+    def __init__(self,
+                 kernel_size,
+                 strides=1,
+                 padding='valid',
+                 #data_format=None,
+                 dilation_rate=1,
+                 activation=None,
+                 use_bias=False,
+                 kernel_initializer='glorot_uniform',
+                 kernel_regularizer=None,
+                 kernel_constraint=None,
+                 bias_initializer='zeros',
+                 bias_regularizer=None,
+                 bias_constraint=None,
+                 activity_regularizer=None,
+                 **kwargs):
+
+        super(Conv1DBaseLayer, self).__init__(
+            activity_regularizer=regularizers.get(activity_regularizer), **kwargs)
+
+        self.rank = rank = 1
+        self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, 'kernel_size')
+        self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
+        self.padding = conv_utils.normalize_padding(padding)
+        self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, 'dilation_rate')
+        self.activation = activations.get(activation)
+        self.use_bias = use_bias
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.bias_constraint = constraints.get(bias_constraint)
+
+    def build(self, input_shape):
+
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(self.filters,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        else:
+            self.bias = None
+
+        super(Conv1DBaseLayer, self).build(input_shape)
+
+    def get_config(self):
+        config = super(Conv1DBaseLayer, self).get_config()
+        config.update({
+            'kernel_size': self.kernel_size,
+            'strides': self.strides,
+            'padding': self.padding,
+            'dilation_rate': self.dilation_rate,
+            'activation': activations.serialize(self.activation),
+            'use_bias': self.use_bias,
+            'kernel_initializer': initializers.serialize(self.kernel_initializer),
+            'kernel_regularizer': regularizers.serialize(self.kernel_regularizer),
+            'kernel_constraint': constraints.serialize(self.kernel_constraint),
+            'bias_initializer': initializers.serialize(self.bias_initializer),
+            'bias_regularizer': regularizers.serialize(self.bias_regularizer),
+            'bias_constraint': constraints.serialize(self.bias_constraint),
+            'activity_regularizer': regularizers.serialize(self.activity_regularizer),
+        })
+        return config
+
+
+class Conv1D(Conv1DBaseLayer):
+    """Conv1D Layer with Weight Normalization.
+    
+    # Arguments
+        They are the same as for the normal Conv1D layer.
+        weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        
+    # References
+        [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
+    """
+    def __init__(self, filters, kernel_size, weightnorm=False, eps=1e-6, **kwargs):
+        super(Conv1D, self).__init__(kernel_size, **kwargs)
+        
+        self.filters = filters
+        self.weightnorm = weightnorm
+        self.eps = eps
+    
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+        
+        super(Conv1D, self).build(input_shape)
+        
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+        else:
+            features = inputs
+        
+        kernel = self.kernel
+
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
+            kernel = kernel / norm * self.wn_g
+
+        features = K.conv1d(features, kernel,
+                            strides=self.strides,
+                            padding=self.padding,
+                            dilation_rate=self.dilation_rate)
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return features
+
+    def get_config(self):
+        config = super(Conv1D, self).get_config()
+        config.update({
+            'filters': self.filters,
+            'weightnorm': self.weightnorm,
+            'eps': self.eps,
+        })
+        return config
+
+
 class Conv2DBaseLayer(Layer):
     """Basic Conv2D class from which other layers inherit.
     """
@@ -91,6 +240,36 @@ class Conv2DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+
+    def build(self, input_shape):
+
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
+        
+        if self.weightnorm:
+            self.wn_g = self.add_weight(name='wn_g',
+                                        shape=(self.filters,),
+                                        initializer=initializers.Ones(),
+                                        trainable=True,
+                                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
+        else:
+            self.bias = None
+        
+        super(Conv2DBaseLayer, self).build(input_shape)
 
     def get_config(self):
         config = super(Conv2DBaseLayer, self).get_config()
@@ -135,33 +314,8 @@ class Conv2D(Conv2DBaseLayer):
         else:
             feature_shape = input_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint,
-                                      trainable=True,
-                                      dtype=self.dtype)
-        
-        if self.weightnorm:
-            self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(self.filters,),
-                                        initializer=initializers.Ones(),
-                                        trainable=True,
-                                        dtype=self.dtype)
-        
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                                        shape=(self.filters,),
-                                        initializer=self.bias_initializer,
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint,
-                                        trainable=True,
-                                        dtype=self.dtype)
-        else:
-            self.bias = None
-        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+
         super(Conv2D, self).build(input_shape)
         
     def call(self, inputs, **kwargs):
@@ -209,9 +363,7 @@ class SparseConv2D(Conv2DBaseLayer):
     
     # Input shape
         features: 4D tensor with shape (batch_size, rows, cols, channels)
-        mask: 4D tensor with shape (batch_size, rows, cols, 1)
-            If no mask is provided, all input pixels with features unequal 
-            to zero are considered as valid.
+        mask: 4D tensor with shape (batch_size, rows, cols, 1)mask_kernel
     
     # Example
         x, m = SparseConv2D(32, 3, padding='same')(x)
@@ -247,37 +399,12 @@ class SparseConv2D(Conv2DBaseLayer):
         else:
             feature_shape = input_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint,
-                                      trainable=True,
-                                      dtype=self.dtype)
-        
         mask_kernel_shape = (*self.kernel_size, 1, 1)
         mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
         # Note: the authors of the paper initialize the mask kernel with ones
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
-        if self.weightnorm:
-            self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(self.filters,),
-                                        initializer=initializers.Ones(),
-                                        trainable=True,
-                                        dtype=self.dtype)
-        
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                                        shape=(self.filters,),
-                                        initializer=self.bias_initializer,
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint,
-                                        trainable=True,
-                                        dtype=self.dtype)
-        else:
-            self.bias = None
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         
         super(SparseConv2D, self).build(input_shape)
     
@@ -409,36 +536,11 @@ class PartialConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
             self.mask_shape = feature_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint,
-                                      trainable=True,
-                                      dtype=self.dtype)
-        
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
+
         mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
         mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
-        
-        if self.weightnorm:
-            self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(self.filters,),
-                                        initializer=initializers.Ones(),
-                                        trainable=True,
-                                        dtype=self.dtype)
-        
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                                        shape=(self.filters,),
-                                        initializer=self.bias_initializer,
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint,
-                                        trainable=True,
-                                        dtype=self.dtype)
-        else:
-            self.bias = None
         
         super(PartialConv2D, self).build(input_shape)
     
@@ -545,37 +647,13 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
             self.mask_shape = feature_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint,
-                                      trainable=True,
-                                      dtype=self.dtype)
-        
+        self.filters = feature_shape[-1] * self.depth_multiplier
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+
         mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
         mask_fanin = tf.reduce_prod(mask_kernel_shape[:2])
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
-        
-        if self.weightnorm:
-            self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
-                                        initializer=initializers.Ones(),
-                                        trainable=True,
-                                        dtype=self.dtype)
-        
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
-                                        initializer=self.bias_initializer,
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint,
-                                        trainable=True,
-                                        dtype=self.dtype)
-        else:
-            self.bias = None
-        
+
         super(PartialDepthwiseConv2D, self).build(input_shape)
     
     def call(self, inputs, **kwargs):
@@ -751,26 +829,29 @@ class GroupConv2D(Conv2DBaseLayer):
             self.first = False
             num_in_channels = input_shape[-2] * input_shape[-1]
         
+        self.kernel_shape = (*self.kernel_size, num_in_channels, self.filters)
+
         self.kernel = self.add_weight(name='kernel',
-                        shape=(*self.kernel_size, num_in_channels, self.filters),
-                        initializer=self.kernel_initializer,
-                        regularizer=self.kernel_regularizer,
-                        constraint=self.kernel_constraint,
-                        trainable=True,
-                        dtype=self.dtype)
+                                      shape=self.kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint,
+                                      trainable=True,
+                                      dtype=self.dtype)
         
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
-                            shape=(self.filters,),
-                            initializer=self.bias_initializer,
-                            regularizer=self.bias_regularizer,
-                            constraint=self.bias_constraint,
-                            trainable=True,
-                            dtype=self.dtype)
+                                        shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint,
+                                        trainable=True,
+                                        dtype=self.dtype)
         else:
             self.bias = None
         
-        self.built = True
+        #super(GroupConv2D, self).build(input_shape)
+        super(Conv2DBaseLayer, self).build(input_shape)
     
     def call(self, features):
         ni = features.shape[-1]
@@ -884,24 +965,6 @@ class DeformableConv2D(Conv2DBaseLayer):
     def build(self, input_shape):
         
         input_dim = input_shape[-1]
-        # kernel_shape = self.kernel_size + (input_dim, self.filters)
-        # we want to use depth-wise conv
-        kernel_shape = self.kernel_size + (self.filters * input_dim, 1)
-        self.kernel = self.add_weight(name='kernel',
-                        shape=kernel_shape,
-                        initializer=self.kernel_initializer,
-                        regularizer=self.kernel_regularizer,
-                        constraint=self.kernel_constraint,
-                        trainable=True,
-                        dtype=self.dtype)
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                            shape=(self.filters,),
-                            initializer=self.bias_initializer,
-                            regularizer=self.bias_regularizer,
-                            constraint=self.bias_constraint,
-                            trainable=True,
-                            dtype=self.dtype)
         
         # create offset conv layer
         offset_num = self.kernel_size[0] * self.kernel_size[1] * self.num_deformable_group
@@ -918,7 +981,30 @@ class DeformableConv2D(Conv2DBaseLayer):
                         regularizer=self.bias_regularizer,
                         trainable=True,
                         dtype=self.dtype)
-        self.built = True
+
+        # kernel_shape = self.kernel_size + (input_dim, self.filters)
+        # we want to use depth-wise conv
+        self.kernel_shape = self.kernel_size + (self.filters * input_dim, 1)
+
+        self.kernel = self.add_weight(name='kernel',
+                        shape=self.kernel_shape,
+                        initializer=self.kernel_initializer,
+                        regularizer=self.kernel_regularizer,
+                        constraint=self.kernel_constraint,
+                        trainable=True,
+                        dtype=self.dtype)
+        
+        if self.use_bias:
+            self.bias = self.add_weight(name='bias',
+                            shape=(self.filters,),
+                            initializer=self.bias_initializer,
+                            regularizer=self.bias_regularizer,
+                            constraint=self.bias_constraint,
+                            trainable=True,
+                            dtype=self.dtype)
+        
+        #super(DeformableConv2D, self).build(input_shape)
+        super(Conv2DBaseLayer, self).build(input_shape)
     
     def call(self, inputs, training=None, **kwargs):
         # get offset, shape [batch_size, out_h, out_w, filter_h, * filter_w * channel_out * 2]
@@ -994,9 +1080,16 @@ class DeformableConv2D(Conv2DBaseLayer):
         # add the output feature maps in the same group
         out = tf.reshape(out, [batch_size, out_h, out_w, self.filters, channel_in])
         out = tf.reduce_sum(out, axis=-1)
+
+        features = out
+
         if self.use_bias:
-            out += self.bias
-        return self.activation(out)
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+
+        return features
     
     def _pad_input(self, inputs):
         """Check if input feature map needs padding, because we don't use the standard Conv() function.
@@ -1096,34 +1189,9 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         else:
             feature_shape = input_shape
         
-        kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+        self.filters = feature_shape[-1] * self.depth_multiplier
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
 
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint,
-                                      trainable=True,
-                                      dtype=self.dtype)
-        
-        if self.weightnorm:
-            self.wn_g = self.add_weight(name='wn_g',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
-                                        initializer=initializers.Ones(),
-                                        trainable=True,
-                                        dtype=self.dtype)
-        
-        if self.use_bias:
-            self.bias = self.add_weight(name='bias',
-                                        shape=(feature_shape[-1]*self.depth_multiplier,),
-                                        initializer=self.bias_initializer,
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint,
-                                        trainable=True,
-                                        dtype=self.dtype)
-        else:
-            self.bias = None
-        
         super(DepthwiseConv2D, self).build(input_shape)
     
     def call(self, inputs, **kwargs):
@@ -1565,4 +1633,8 @@ class Scale(Layer):
             'scale_constraint': constraints.serialize(self.scale_constraint),
         })
         return config
+
+
+def Split(n, axis=-1):
+    return Lambda(lambda x: tf.split(x, num_or_size_splits=n, axis=axis))
 

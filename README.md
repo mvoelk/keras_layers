@@ -1,9 +1,9 @@
 # Various Keras Layers that can be used with TensorFlow 2.x
 
-## Conv2D
+## Conv1D and Conv2D
 Standard Convolution layer that comes with some changes and extension.
 - bias is disabled by default
-- Weight Normalization as an alternative to batch normalization with comparable results
+- Weight Normalization as an alternative to batch normalization
 
 Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](http://arxiv.org/abs/1602.07868)
 
