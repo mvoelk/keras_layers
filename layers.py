@@ -11,7 +11,8 @@ from keras import backend as K
 from keras.layers import Layer, Lambda
 from keras.layers import InputSpec
 from keras import initializers, regularizers, constraints, activations
-from keras.utils import conv_utils
+#from keras.utils import conv_utils
+from tensorflow.python.keras.utils import conv_utils
 
 
 def gaussian_init(shape, dtype=None, partition_info=None):
