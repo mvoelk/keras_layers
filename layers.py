@@ -23,35 +23,35 @@ def gaussian_init(shape, dtype=None, partition_info=None):
 def conv_init_linear(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fanin = np.prod(shape[:3])
+    fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fanin = np.prod(shape[:3])
+    fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu2(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fanin = np.prod(shape[:3])
+    fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5) * 2
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_linear(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fanin = np.prod(shape[:2])
+    fanin = np.prod(shape[:-2])
     v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     v = np.random.randn(*shape)
     v = np.clip(v, -3, +3)
-    fanin = np.prod(shape[:2])
+    fanin = np.prod(shape[:-2])
     v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
