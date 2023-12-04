@@ -3,12 +3,14 @@
 ## Conv1D and Conv2D
 Standard Convolution layer that comes with some changes and extension.
 - bias is disabled by default
-- Weight Normalization
-- Equalized Learning Rate
+
+### Weight Normalization
 
 Weight Normalization normalizes the weights and learns a rescaling of the them.
 
 Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](https://arxiv.org/abs/1602.07868)
+
+### Equalized Learning Rates
 
 Equalized Learning Rates across all layers are achieved by multiplying the weights by an appropriate constant. With proper initialization like a standard normal distribution, this keeps the distribution of the wights and feature maps across the layers roughly at the same scale. It also makes other normalization techniques such as Batch Normalization unnecessary. Equalized Learning Rates became particularly popular through the StyleGAN2 paper.
 
