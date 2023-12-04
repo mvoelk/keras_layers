@@ -6,6 +6,7 @@ Code was taken from https://github.com/mvoelk/keras_layers
 
 import numpy as np
 import tensorflow as tf
+import warnings
 
 from keras import backend as K
 from keras.layers import Layer, Lambda
@@ -15,41 +16,47 @@ from keras import initializers, regularizers, constraints, activations
 from tensorflow.python.keras.utils import conv_utils
 
 
-def gaussian_init(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+def normal_init(shape, dtype=None, partition_info=None):
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     return K.constant(v, dtype=dtype)
 
+def uniform_init(shape, dtype=None, partition_info=None):
+    v = np.random.uniform(-3**0.5, 3**0.5, size=shape)
+    return K.constant(v, dtype=dtype)
+
 def conv_init_linear(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+    # He init
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
 
 def conv_init_relu2(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     fanin = np.prod(shape[:-1])
     v = v / (fanin**0.5) * 2
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_linear(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     fanin = np.prod(shape[:-2])
     v = v / (fanin**0.5)
     return K.constant(v, dtype=dtype)
 
 def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
-    v = np.random.randn(*shape)
+    # He init
+    v = np.random.normal(0, 1, size=shape)
     v = np.clip(v, -3, +3)
     fanin = np.prod(shape[:-2])
     v = v / (fanin**0.5) * 2**0.5
@@ -241,6 +248,8 @@ class Conv2DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+        self.weightnorm = False
+        self.equalize = False
 
     def build(self, input_shape):
 
@@ -253,12 +262,24 @@ class Conv2DBaseLayer(Layer):
                                       dtype=self.dtype)
         
         if self.weightnorm:
+            assert not self.equalize
             self.wn_g = self.add_weight(name='wn_g',
                                         shape=(self.filters,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
         
+        if self.equalize:
+            assert not self.weightnorm
+            if self.kernel_initializer not in [normal_init, uniform_init]:
+                warnings.warn('when equalization is used, normal_init or uniform_init are the recommended kernel initializers')
+
+            if hasattr(self, 'depth_multiplier'):
+                fanin = np.prod(self.kernel_shape[:-2])
+            else:
+                fanin = np.prod(self.kernel_shape[:-1])
+            self.scale = np.sqrt(2) / np.sqrt(fanin)
+
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
                                         shape=(self.filters,),
@@ -298,15 +319,17 @@ class Conv2D(Conv2DBaseLayer):
     # Arguments
         They are the same as for the normal Conv2D layer.
         weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        equalize: Boolean flag, 
         
     # References
         [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
     """
-    def __init__(self, filters, kernel_size, weightnorm=False, eps=1e-6, **kwargs):
+    def __init__(self, filters, kernel_size, weightnorm=False, equalize=False, eps=1e-6, **kwargs):
         super(Conv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.weightnorm = weightnorm
+        self.equalize = equalize
         self.eps = eps
     
     def build(self, input_shape):
@@ -316,7 +339,7 @@ class Conv2D(Conv2DBaseLayer):
             feature_shape = input_shape
         
         self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-
+        
         super(Conv2D, self).build(input_shape)
         
     def call(self, inputs, **kwargs):
@@ -330,7 +353,10 @@ class Conv2D(Conv2DBaseLayer):
         if self.weightnorm:
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
             kernel = kernel / norm * self.wn_g
-        
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = K.conv2d(features, kernel,
                             strides=self.strides,
                             padding=self.padding,
@@ -349,6 +375,7 @@ class Conv2D(Conv2DBaseLayer):
         config.update({
             'filters': self.filters,
             'weightnorm': self.weightnorm,
+            'equalize': self.equalize,
             'eps': self.eps,
         })
         return config
@@ -364,7 +391,7 @@ class SparseConv2D(Conv2DBaseLayer):
     
     # Input shape
         features: 4D tensor with shape (batch_size, rows, cols, channels)
-        mask: 4D tensor with shape (batch_size, rows, cols, 1)mask_kernel
+        mask: 4D tensor with shape (batch_size, rows, cols, 1)
     
     # Example
         x, m = SparseConv2D(32, 3, padding='same')(x)
@@ -401,7 +428,7 @@ class SparseConv2D(Conv2DBaseLayer):
             feature_shape = input_shape
         
         mask_kernel_shape = (*self.kernel_size, 1, 1)
-        mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
+        mask_fanin = np.prod(mask_kernel_shape[:3])
         # Note: the authors of the paper initialize the mask kernel with ones
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
@@ -540,7 +567,7 @@ class PartialConv2D(Conv2DBaseLayer):
         self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
 
         mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.filters)
-        mask_fanin = tf.reduce_prod(mask_kernel_shape[:3])
+        mask_fanin = np.prod(mask_kernel_shape[:3])
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
         
         super(PartialConv2D, self).build(input_shape)
@@ -632,10 +659,11 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
                  eps=1e-6,
                  **kwargs):
         
+        self.depth_multiplier = depth_multiplier
+
         kwargs['kernel_initializer'] = kernel_initializer
         super(PartialDepthwiseConv2D, self).__init__(kernel_size, **kwargs)
         
-        self.depth_multiplier = depth_multiplier
         self.binary = binary
         self.weightnorm = weightnorm
         self.eps = eps
@@ -652,7 +680,7 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
 
         mask_kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
-        mask_fanin = tf.reduce_prod(mask_kernel_shape[:2])
+        mask_fanin = np.prod(mask_kernel_shape[:2])
         self.mask_kernel = tf.ones(mask_kernel_shape) / tf.cast(mask_fanin, 'float32')
 
         super(PartialDepthwiseConv2D, self).build(input_shape)
@@ -1174,13 +1202,15 @@ class DepthwiseConv2D(Conv2DBaseLayer):
     def __init__(self, depth_multiplier, kernel_size,
                  kernel_initializer=depthwiseconv_init_relu,
                  weightnorm=False,
+                 equalize=False,
                  eps=1e-6,
                  **kwargs):
         
+        self.depth_multiplier = depth_multiplier
+
         kwargs['kernel_initializer'] = kernel_initializer
         super(DepthwiseConv2D, self).__init__(kernel_size, **kwargs)
         
-        self.depth_multiplier = depth_multiplier
         self.weightnorm = weightnorm
         self.eps = eps
     
@@ -1206,7 +1236,10 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         if self.weightnorm:
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
             kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
-        
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
                                       padding=self.padding,
@@ -1246,6 +1279,7 @@ class DepthwiseConv2D(Conv2DBaseLayer):
         config.update({
             'depth_multiplier': self.depth_multiplier,
             'weightnorm': self.weightnorm,
+            'equalize': self.equalize,
             'eps': self.eps,
         })
         return config

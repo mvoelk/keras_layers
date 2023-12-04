@@ -3,9 +3,17 @@
 ## Conv1D and Conv2D
 Standard Convolution layer that comes with some changes and extension.
 - bias is disabled by default
-- Weight Normalization as an alternative to batch normalization
+- Weight Normalization
+- Equalized Learning Rate
 
-Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](http://arxiv.org/abs/1602.07868)
+Weight Normalization normalizes the weights and learns a rescaling of the them.
+
+Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks [arXiv:1602.07868](https://arxiv.org/abs/1602.07868)
+
+Equalized Learning Rates across all layers are achieved by multiplying the weights by an appropriate constant. With proper initialization like a standard normal distribution, this keeps the distribution of the wights and feature maps across the layers roughly at the same scale. It also makes other normalization techniques such as Batch Normalization unnecessary. Equalized Learning Rates became particularly popular through the StyleGAN2 paper.
+
+Progressive Growing of GANs for Improved Quality, Stability, and Variation [arXiv:1710.10196](https://arxiv.org/abs/1710.10196)  
+Analyzing and Improving the Image Quality of StyleGAN [arXiv:1912.04958](https://arxiv.org/abs/1912.04958)
 
 ## DepthwiseConv2D
 Depthwise Convolution layers perform the convolution operation for each feature map separately. Compared to conventional Conv2D layers, they come with significantly fewer parameters and lead to smaller models. A DepthwiseConv2D layer followed by a 1x1 Conv2D layer is equivalent to the SeperableConv2D layer provided by Keras.
@@ -58,7 +66,7 @@ Making Convolutional Networks Shift-Invariant Again [arXiv:1904.11486](https://a
 
 Layer Normalization is an alternative to Batch Normalization. The statistic used for normalization is calculated over the channel dimension. Compared to Batch Normalization, the results are usually slightly worse, but it can be applied in situations in which it is difficult to apply Batch Normalization.
 
-Layer Normalization [arXiv:1607.06450](http://arxiv.org/abs/1607.06450)
+Layer Normalization [arXiv:1607.06450](https://arxiv.org/abs/1607.06450)
 
 ## InstanceNormalization
 
