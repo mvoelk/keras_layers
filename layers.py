@@ -1,6 +1,6 @@
 """
 SPDX-License-Identifier: MIT
-Copyright © 2018 - 2022 Markus Völk
+Copyright © 2018 - 2023 Markus Völk
 Code was taken from https://github.com/mvoelk/keras_layers
 """
 

@@ -75,4 +75,9 @@ Instance Normalization is an alternative to Batch Normalization and has interest
 Instance Normalization: The Missing Ingredient for Fast Stylization [arXiv:1607.08022](https://arxiv.org/abs/1607.08022)
 
 ## Scale
+
 Learned affine scaling of the features: `scale * x + shift`. A 1x1 DepthwiseConv2D with bias should do the same.
+
+## Genreral notes and usage
+
+- `layers.py` can be used independently of the other files contained in this repository.
