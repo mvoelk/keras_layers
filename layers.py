@@ -99,6 +99,8 @@ class Conv1DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
+        self.weightnorm = False
+        self.equalize = False
 
     def build(self, input_shape):
 
@@ -111,12 +113,24 @@ class Conv1DBaseLayer(Layer):
                                       dtype=self.dtype)
         
         if self.weightnorm:
+            assert not self.equalize
             self.wn_g = self.add_weight(name='wn_g',
                                         shape=(self.filters,),
                                         initializer=initializers.Ones(),
                                         trainable=True,
                                         dtype=self.dtype)
         
+        if self.equalize:
+            assert not self.weightnorm
+            if self.kernel_initializer not in [normal_init, uniform_init]:
+                warnings.warn('when equalization is used, normal_init or uniform_init are the recommended kernel initializers')
+
+            if hasattr(self, 'depth_multiplier'):
+                fanin = np.prod(self.kernel_shape[:-2])
+            else:
+                fanin = np.prod(self.kernel_shape[:-1])
+            self.scale = np.sqrt(2) / np.sqrt(fanin)
+
         if self.use_bias:
             self.bias = self.add_weight(name='bias',
                                         shape=(self.filters,),
@@ -151,20 +165,22 @@ class Conv1DBaseLayer(Layer):
 
 
 class Conv1D(Conv1DBaseLayer):
-    """Conv1D Layer with Weight Normalization.
+    """Conv1D Layer with Weight Normalization and Equalized Learning Rates.
     
     # Arguments
         They are the same as for the normal Conv1D layer.
         weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        equalize: Boolean flag, wehter Equalized Learning Rates are used.
         
     # References
         [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
     """
-    def __init__(self, filters, kernel_size, weightnorm=False, eps=1e-6, **kwargs):
+    def __init__(self, filters, kernel_size, weightnorm=False, equalize=False, eps=1e-6, **kwargs):
         super(Conv1D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.weightnorm = weightnorm
+        self.equalize = equalize
         self.eps = eps
     
     def build(self, input_shape):
@@ -189,6 +205,9 @@ class Conv1D(Conv1DBaseLayer):
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
             kernel = kernel / norm * self.wn_g
 
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = K.conv1d(features, kernel,
                             strides=self.strides,
                             padding=self.padding,
@@ -207,6 +226,7 @@ class Conv1D(Conv1DBaseLayer):
         config.update({
             'filters': self.filters,
             'weightnorm': self.weightnorm,
+            'equalize': self.equalize,
             'eps': self.eps,
         })
         return config
@@ -290,7 +310,7 @@ class Conv2DBaseLayer(Layer):
                                         dtype=self.dtype)
         else:
             self.bias = None
-        
+
         super(Conv2DBaseLayer, self).build(input_shape)
 
     def get_config(self):
@@ -314,12 +334,12 @@ class Conv2DBaseLayer(Layer):
 
 
 class Conv2D(Conv2DBaseLayer):
-    """Conv2D Layer with Weight Normalization.
+    """Conv2D Layer with Weight Normalization and Equalized Learning Rates.
     
     # Arguments
         They are the same as for the normal Conv2D layer.
         weightnorm: Boolean flag, whether Weight Normalization is used or not.
-        equalize: Boolean flag, 
+        equalize: Boolean flag, wehter Equalized Learning Rates are used.
         
     # References
         [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
