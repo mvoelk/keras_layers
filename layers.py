@@ -81,6 +81,7 @@ class Conv1DBaseLayer(Layer):
                  bias_regularizer=None,
                  bias_constraint=None,
                  activity_regularizer=None,
+                 weightnorm=False, equalize=False, eps=1e-6,
                  **kwargs):
 
         super(Conv1DBaseLayer, self).__init__(
@@ -99,8 +100,9 @@ class Conv1DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
-        self.weightnorm = False
-        self.equalize = False
+        self.weightnorm = weightnorm
+        self.equalize = equalize
+        self.eps = eps
 
     def build(self, input_shape):
 
@@ -160,6 +162,9 @@ class Conv1DBaseLayer(Layer):
             'bias_regularizer': regularizers.serialize(self.bias_regularizer),
             'bias_constraint': constraints.serialize(self.bias_constraint),
             'activity_regularizer': regularizers.serialize(self.activity_regularizer),
+            'weightnorm': self.weightnorm,
+            'equalize': self.equalize,
+            'eps': self.eps,
         })
         return config
 
@@ -175,13 +180,10 @@ class Conv1D(Conv1DBaseLayer):
     # References
         [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
     """
-    def __init__(self, filters, kernel_size, weightnorm=False, equalize=False, eps=1e-6, **kwargs):
+    def __init__(self, filters, kernel_size, **kwargs):
         super(Conv1D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
-        self.weightnorm = weightnorm
-        self.equalize = equalize
-        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -225,9 +227,6 @@ class Conv1D(Conv1DBaseLayer):
         config = super(Conv1D, self).get_config()
         config.update({
             'filters': self.filters,
-            'weightnorm': self.weightnorm,
-            'equalize': self.equalize,
-            'eps': self.eps,
         })
         return config
 
@@ -250,6 +249,7 @@ class Conv2DBaseLayer(Layer):
                  bias_regularizer=None,
                  bias_constraint=None,
                  activity_regularizer=None,
+                 weightnorm=False, equalize=False, eps=1e-6,
                  **kwargs):
 
         super(Conv2DBaseLayer, self).__init__(
@@ -268,8 +268,9 @@ class Conv2DBaseLayer(Layer):
         self.bias_initializer = initializers.get(bias_initializer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.bias_constraint = constraints.get(bias_constraint)
-        self.weightnorm = False
-        self.equalize = False
+        self.weightnorm = weightnorm
+        self.equalize = equalize
+        self.eps = eps
 
     def build(self, input_shape):
 
@@ -329,6 +330,9 @@ class Conv2DBaseLayer(Layer):
             'bias_regularizer': regularizers.serialize(self.bias_regularizer),
             'bias_constraint': constraints.serialize(self.bias_constraint),
             'activity_regularizer': regularizers.serialize(self.activity_regularizer),
+            'weightnorm': self.weightnorm,
+            'equalize': self.equalize,
+            'eps': self.eps,
         })
         return config
 
@@ -344,13 +348,10 @@ class Conv2D(Conv2DBaseLayer):
     # References
         [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](http://arxiv.org/abs/1602.07868)
     """
-    def __init__(self, filters, kernel_size, weightnorm=False, equalize=False, eps=1e-6, **kwargs):
+    def __init__(self, filters, kernel_size, **kwargs):
         super(Conv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
-        self.weightnorm = weightnorm
-        self.equalize = equalize
-        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -394,9 +395,98 @@ class Conv2D(Conv2DBaseLayer):
         config = super(Conv2D, self).get_config()
         config.update({
             'filters': self.filters,
-            'weightnorm': self.weightnorm,
-            'equalize': self.equalize,
-            'eps': self.eps,
+        })
+        return config
+
+
+class DepthwiseConv2D(Conv2DBaseLayer):
+    """2D depthwise convolution layer.
+    
+    # Arguments
+        They are the same as for the normal Conv2D layer except the 'depth_multiplier' 
+        argument is used instead of 'filters'.
+        depth_multiplier: Integer
+        weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        equalize: Boolean flag, wehter Equalized Learning Rates are used.
+
+    # Notes
+        A DepthwiseConv2D layer followed by an 1x1 Conv2D layer is equivalent
+        to the SeparableConv2D layer provided by Keras.
+    
+    # References
+        [Xception: Deep Learning with Depthwise Separable Convolutions](http://arxiv.org/abs/1610.02357)
+    """
+    def __init__(self, depth_multiplier, kernel_size, kernel_initializer=depthwiseconv_init_relu, **kwargs):
+        
+        self.depth_multiplier = depth_multiplier
+
+        kwargs['kernel_initializer'] = kernel_initializer
+        super(DepthwiseConv2D, self).__init__(kernel_size, **kwargs)
+    
+    def build(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        self.filters = feature_shape[-1] * self.depth_multiplier
+        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
+
+        super(DepthwiseConv2D, self).build(input_shape)
+    
+    def call(self, inputs, **kwargs):
+        if type(inputs) is list:
+            features = inputs[0]
+        else:
+            features = inputs
+        
+        kernel = self.kernel
+
+        if self.weightnorm:
+            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
+            kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
+        features = K.depthwise_conv2d(features, kernel,
+                                      strides=self.strides,
+                                      padding=self.padding,
+                                      dilation_rate=self.dilation_rate)
+        
+        if self.use_bias:
+            features = tf.add(features, self.bias)
+        
+        if self.activation is not None:
+            features = self.activation(features)
+        
+        return features
+    
+    def compute_output_shape(self, input_shape):
+        if type(input_shape) is list:
+            feature_shape = input_shape[0]
+        else:
+            feature_shape = input_shape
+        
+        space = feature_shape[1:-1]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(
+                space[i],
+                self.kernel_size[i],
+                padding=self.padding,
+                stride=self.strides[i],
+                dilation=self.dilation_rate[i])
+            new_space.append(new_dim)
+        
+        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
+        
+        return feature_shape
+    
+    def get_config(self):
+        config = super(DepthwiseConv2D, self).get_config()
+        config.update({
+            'depth_multiplier': self.depth_multiplier,
         })
         return config
 
@@ -408,6 +498,8 @@ class SparseConv2D(Conv2DBaseLayer):
         They are the same as for the normal Conv2D layer.
         binary: Boolean flag, whether the sparsity is propagated as binary 
             mask or as float values.
+        weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        equalize: Boolean flag, wehter Equalized Learning Rates are used.
     
     # Input shape
         features: 4D tensor with shape (batch_size, rows, cols, channels)
@@ -426,20 +518,13 @@ class SparseConv2D(Conv2DBaseLayer):
     # References
         [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
     """
-    def __init__(self, filters, kernel_size,
-                 kernel_initializer=conv_init_relu,
-                 binary=True,
-                 weightnorm=False,
-                 eps=1e-6,
-                 **kwargs):
+    def __init__(self, filters, kernel_size, kernel_initializer=conv_init_relu, binary=True, **kwargs):
         
         kwargs['kernel_initializer'] = kernel_initializer
         super(SparseConv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.binary = binary
-        self.weightnorm = weightnorm
-        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -470,7 +555,10 @@ class SparseConv2D(Conv2DBaseLayer):
         if self.weightnorm:
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
             kernel = kernel / norm * self.wn_g
-        
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = tf.multiply(features, mask)
         features = K.conv2d(features, kernel,
                             strides=self.strides,
@@ -524,8 +612,6 @@ class SparseConv2D(Conv2DBaseLayer):
         config.update({
             'filters': self.filters,
             'binary': self.binary,
-            'weightnorm': self.weightnorm,
-            'eps': self.eps,
         })
         return config
 
@@ -537,6 +623,8 @@ class PartialConv2D(Conv2DBaseLayer):
         They are the same as for the normal Conv2D layer.
         binary: Boolean flag, whether the sparsity is propagated as binary 
             mask or as float values.
+        weightnorm: Boolean flag, whether Weight Normalization is used or not.
+        equalize: Boolean flag, wehter Equalized Learning Rates are used.
     
     # Input shape
         features: 4D tensor with shape (batch_size, rows, cols, channels)
@@ -561,20 +649,13 @@ class PartialConv2D(Conv2DBaseLayer):
         [Image Inpainting for Irregular Holes Using Partial Convolutions](https://arxiv.org/abs/1804.07723)
         [Sparsity Invariant CNNs](https://arxiv.org/abs/1708.06500)
     """
-    def __init__(self, filters, kernel_size,
-                 kernel_initializer=conv_init_relu,
-                 binary=True,
-                 weightnorm=False,
-                 eps=1e-6,
-                 **kwargs):
+    def __init__(self, filters, kernel_size, kernel_initializer=conv_init_relu, binary=True, **kwargs):
         
         kwargs['kernel_initializer'] = kernel_initializer
         super(PartialConv2D, self).__init__(kernel_size, **kwargs)
         
         self.filters = filters
         self.binary = binary
-        self.weightnorm = weightnorm
-        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -609,7 +690,10 @@ class PartialConv2D(Conv2DBaseLayer):
         if self.weightnorm:
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1,2)) + self.eps)
             kernel = kernel / norm * self.wn_g
-        
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = tf.multiply(features, mask)
         features = K.conv2d(features, kernel,
                             strides=self.strides,
@@ -663,8 +747,6 @@ class PartialConv2D(Conv2DBaseLayer):
         config.update({
             'filters': self.filters,
             'binary': self.binary,
-            'weightnorm': self.weightnorm,
-            'eps': self.eps,
         })
         return config
 
@@ -672,12 +754,7 @@ class PartialConv2D(Conv2DBaseLayer):
 class PartialDepthwiseConv2D(Conv2DBaseLayer):
     """see PartialConv2D and DepthwiseConv2D
     """
-    def __init__(self, depth_multiplier, kernel_size,
-                 kernel_initializer=depthwiseconv_init_relu,
-                 binary=True,
-                 weightnorm=False,
-                 eps=1e-6,
-                 **kwargs):
+    def __init__(self, depth_multiplier, kernel_size, kernel_initializer=depthwiseconv_init_relu, binary=True, **kwargs):
         
         self.depth_multiplier = depth_multiplier
 
@@ -685,8 +762,6 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         super(PartialDepthwiseConv2D, self).__init__(kernel_size, **kwargs)
         
         self.binary = binary
-        self.weightnorm = weightnorm
-        self.eps = eps
     
     def build(self, input_shape):
         if type(input_shape) is list:
@@ -722,7 +797,10 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         if self.weightnorm:
             norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
             kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
-        
+
+        if self.equalize:
+            kernel = kernel * self.scale
+
         features = tf.multiply(features, mask)
         features = K.depthwise_conv2d(features, kernel,
                                       strides=self.strides,
@@ -776,8 +854,6 @@ class PartialDepthwiseConv2D(Conv2DBaseLayer):
         config.update({
             'depth_multiplier': self.depth_multiplier,
             'binary': self.binary,
-            'weightnorm': self.weightnorm,
-            'eps': self.eps,
         })
         return config
 
@@ -1207,102 +1283,6 @@ class DeformableConv2D(Conv2DBaseLayer):
         b = tf.tile(batch_idx, (1, h, w, n))
         pixel_idx = tf.stack([b, y, x], axis=-1)
         return tf.gather_nd(inputs, pixel_idx)
-
-
-class DepthwiseConv2D(Conv2DBaseLayer):
-    """2D depthwise convolution layer.
-    
-    # Notes
-        A DepthwiseConv2D layer followed by an 1x1 Conv2D layer is equivalent
-        to the SeparableConv2D layer provided by Keras.
-    
-    # References
-        [Xception: Deep Learning with Depthwise Separable Convolutions](http://arxiv.org/abs/1610.02357)
-    """
-    def __init__(self, depth_multiplier, kernel_size,
-                 kernel_initializer=depthwiseconv_init_relu,
-                 weightnorm=False,
-                 equalize=False,
-                 eps=1e-6,
-                 **kwargs):
-        
-        self.depth_multiplier = depth_multiplier
-
-        kwargs['kernel_initializer'] = kernel_initializer
-        super(DepthwiseConv2D, self).__init__(kernel_size, **kwargs)
-        
-        self.weightnorm = weightnorm
-        self.eps = eps
-    
-    def build(self, input_shape):
-        if type(input_shape) is list:
-            feature_shape = input_shape[0]
-        else:
-            feature_shape = input_shape
-        
-        self.filters = feature_shape[-1] * self.depth_multiplier
-        self.kernel_shape = (*self.kernel_size, feature_shape[-1], self.depth_multiplier)
-
-        super(DepthwiseConv2D, self).build(input_shape)
-    
-    def call(self, inputs, **kwargs):
-        if type(inputs) is list:
-            features = inputs[0]
-        else:
-            features = inputs
-        
-        kernel = self.kernel
-
-        if self.weightnorm:
-            norm = tf.sqrt(tf.reduce_sum(tf.square(kernel), (0,1)) + self.eps)
-            kernel = kernel / norm * tf.reshape(self.wn_g, (-1, self.depth_multiplier))
-
-        if self.equalize:
-            kernel = kernel * self.scale
-
-        features = K.depthwise_conv2d(features, kernel,
-                                      strides=self.strides,
-                                      padding=self.padding,
-                                      dilation_rate=self.dilation_rate)
-        
-        if self.use_bias:
-            features = tf.add(features, self.bias)
-        
-        if self.activation is not None:
-            features = self.activation(features)
-        
-        return features
-    
-    def compute_output_shape(self, input_shape):
-        if type(input_shape) is list:
-            feature_shape = input_shape[0]
-        else:
-            feature_shape = input_shape
-        
-        space = feature_shape[1:-1]
-        new_space = []
-        for i in range(len(space)):
-            new_dim = conv_utils.conv_output_length(
-                space[i],
-                self.kernel_size[i],
-                padding=self.padding,
-                stride=self.strides[i],
-                dilation=self.dilation_rate[i])
-            new_space.append(new_dim)
-        
-        feature_shape = [feature_shape[0], *new_space, feature_shape[-1]*self.depth_multiplier]
-        
-        return feature_shape
-    
-    def get_config(self):
-        config = super(DepthwiseConv2D, self).get_config()
-        config.update({
-            'depth_multiplier': self.depth_multiplier,
-            'weightnorm': self.weightnorm,
-            'equalize': self.equalize,
-            'eps': self.eps,
-        })
-        return config
 
 
 class MaxPoolingWithArgmax2D(Layer):
