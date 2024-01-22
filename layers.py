@@ -1,6 +1,6 @@
 """
 SPDX-License-Identifier: MIT
-Copyright © 2018 - 2023 Markus Völk
+Copyright © 2018 - 2024 Markus Völk
 Code was taken from https://github.com/mvoelk/keras_layers
 """
 
@@ -23,6 +23,22 @@ def normal_init(shape, dtype=None, partition_info=None):
 
 def uniform_init(shape, dtype=None, partition_info=None):
     v = np.random.uniform(-3**0.5, 3**0.5, size=shape)
+    return K.constant(v, dtype=dtype)
+
+def orthogonal_init(shape, dtype=None, partition_info=None):
+    m, n = np.prod(shape[:-1]), shape[-1]
+    a = np.random.normal(size=(max(m,n), min(m,n)))
+    q, r = np.linalg.qr(a)
+    q = q / np.std(q)
+    if m < n:
+        q = np.transpose(q)
+    v = np.reshape(q, shape)
+    #v = np.clip(v, -3, +3)
+    return K.constant(v, dtype=dtype)
+
+def near_zero_init(shape, dtype=None, partition_info=None):
+    eps = 1e-8
+    v = np.random.uniform(-eps, eps, size=shape)
     return K.constant(v, dtype=dtype)
 
 def conv_init_linear(shape, dtype=None, partition_info=None):
@@ -61,6 +77,10 @@ def depthwiseconv_init_relu(shape, dtype=None, partition_info=None):
     fanin = np.prod(shape[:-2])
     v = v / (fanin**0.5) * 2**0.5
     return K.constant(v, dtype=dtype)
+
+def orthogonal_conv_init_relu(shape, dtype=None, partition_info=None):
+    fanin = np.prod(shape[:-1])
+    return orthogonal_init(shape, dtype) / (fanin**0.5) * 2**0.5
 
 
 class Conv1DBaseLayer(Layer):
@@ -1302,8 +1322,8 @@ class MaxPoolingWithArgmax2D(Layer):
         self.padding = conv_utils.normalize_padding(padding)
 
     def call(self, inputs, **kwargs):
-        ksize = [1, self.pool_size[0], self.pool_size[1], 1]
-        strides = [1, self.strides[0], self.strides[1], 1]
+        ksize = (1, self.pool_size[0], self.pool_size[1], 1)
+        strides = (1, self.strides[0], self.strides[1], 1)
         padding = self.padding.upper()
         output, argmax = tf.nn.max_pool_with_argmax(inputs, ksize, strides, padding)
         argmax = tf.cast(argmax, K.floatx())
@@ -1311,8 +1331,7 @@ class MaxPoolingWithArgmax2D(Layer):
     
     def compute_output_shape(self, input_shape):
         ratio = (1, 2, 2, 1)
-        output_shape = [dim // ratio[idx] if dim is not None else None for idx, dim in enumerate(input_shape)]
-        output_shape = tuple(output_shape)
+        output_shape = tuple([dim // ratio[idx] if dim is not None else None for idx, dim in enumerate(input_shape)])
         return [output_shape, output_shape]
 
     def compute_mask(self, inputs, mask=None):
@@ -1621,10 +1640,10 @@ class Scale(Layer):
 
     def compute_output_shape(self, input_shape):
         return input_shape
-    
+
     def build(self, input_shape):
         if self.use_shift:
-            self.shift = self.add_variable(name='shift',
+            self.shift = self.add_weights(name='shift',
                                           shape=(input_shape[-1],),
                                           initializer=self.shift_initializer,
                                           regularizer=self.shift_regularizer,
@@ -1633,9 +1652,9 @@ class Scale(Layer):
                                           dtype=self.dtype)
         else:
             self.shfit = None
-        
+
         if self.use_scale:
-            self.scale = self.add_variable(name='scale',
+            self.scale = self.add_weights(name='scale',
                                           shape=(input_shape[-1],),
                                           initializer=self.scale_initializer,
                                           regularizer=self.scale_regularizer,
@@ -1646,7 +1665,7 @@ class Scale(Layer):
             self.scale = None
 
         super(Scale, self).build(input_shape)
-    
+
     def call(self, inputs, **kwargs):
         x = inputs
         if self.use_scale:
@@ -1672,4 +1691,3 @@ class Scale(Layer):
 
 def Split(n, axis=-1):
     return Lambda(lambda x: tf.split(x, num_or_size_splits=n, axis=axis))
-
