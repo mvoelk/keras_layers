@@ -1643,24 +1643,24 @@ class Scale(Layer):
 
     def build(self, input_shape):
         if self.use_shift:
-            self.shift = self.add_weights(name='shift',
-                                          shape=(input_shape[-1],),
-                                          initializer=self.shift_initializer,
-                                          regularizer=self.shift_regularizer,
-                                          constraint=self.shift_constraint,
-                                          trainable=True,
-                                          dtype=self.dtype)
+            self.shift = self.add_weight(name='shift',
+                                         shape=(input_shape[-1],),
+                                         initializer=self.shift_initializer,
+                                         regularizer=self.shift_regularizer,
+                                         constraint=self.shift_constraint,
+                                         trainable=True,
+                                         dtype=self.dtype)
         else:
             self.shfit = None
 
         if self.use_scale:
-            self.scale = self.add_weights(name='scale',
-                                          shape=(input_shape[-1],),
-                                          initializer=self.scale_initializer,
-                                          regularizer=self.scale_regularizer,
-                                          constraint=self.scale_constraint,
-                                          trainable=True,
-                                          dtype=self.dtype)
+            self.scale = self.add_weight(name='scale',
+                                         shape=(input_shape[-1],),
+                                         initializer=self.scale_initializer,
+                                         regularizer=self.scale_regularizer,
+                                         constraint=self.scale_constraint,
+                                         trainable=True,
+                                         dtype=self.dtype)
         else:
             self.scale = None
 
