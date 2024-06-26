@@ -1322,20 +1322,15 @@ class MaxPoolingWithArgmax2D(Layer):
         self.padding = conv_utils.normalize_padding(padding)
 
     def call(self, inputs, **kwargs):
-        ksize = (1, self.pool_size[0], self.pool_size[1], 1)
+        size = (1, self.pool_size[0], self.pool_size[1], 1)
         strides = (1, self.strides[0], self.strides[1], 1)
         padding = self.padding.upper()
-        output, argmax = tf.nn.max_pool_with_argmax(inputs, ksize, strides, padding)
-        argmax = tf.cast(argmax, K.floatx())
-        return [output, argmax]
+        output, idxs = tf.nn.max_pool_with_argmax(inputs, size, strides, padding)
+        return [output, idxs]
     
     def compute_output_shape(self, input_shape):
-        ratio = (1, 2, 2, 1)
-        output_shape = tuple([dim // ratio[idx] if dim is not None else None for idx, dim in enumerate(input_shape)])
+        output_shape = (input_shape[0], input_shape[1]//self.strides[0], input_shape[2]//self.strides[1], input_shape[3])
         return [output_shape, output_shape]
-
-    def compute_mask(self, inputs, mask=None):
-        return 2 * [None]
     
     def get_config(self):
         config = super(MaxPoolingWithArgmax2D, self).get_config()
@@ -1361,36 +1356,28 @@ class MaxUnpooling2D(Layer):
         super(MaxUnpooling2D, self).__init__(**kwargs)
         self.size = conv_utils.normalize_tuple(size, 2, 'size')
 
-    def call(self, inputs, output_shape=None):
-        updates, mask = inputs[0], inputs[1]
+    def call(self, inputs):
+        features, idxs = inputs[0], inputs[1]
         
-        mask = tf.cast(mask, 'int32')
-        input_shape = tf.shape(updates, out_type='int32')
-        #  calculation new shape
-        if output_shape is None:
-            output_shape = (input_shape[0], input_shape[1] * self.size[0], input_shape[2] * self.size[1], input_shape[3])
+        input_shape = tf.shape(features, out_type='int64')
+        output_shape = (input_shape[0], input_shape[1]*self.size[0], input_shape[2]*self.size[1], input_shape[3])
         
         # calculation indices for batch, height, width and feature maps
-        one_like_mask = K.ones_like(mask, dtype='int32')
-        batch_shape = K.concatenate([[input_shape[0]], [1], [1], [1]], axis=0)
-        batch_range = K.reshape(tf.range(output_shape[0], dtype='int32'), shape=batch_shape)
-        b = one_like_mask * batch_range
-        y = mask // (output_shape[2] * output_shape[3])
-        x = (mask // output_shape[3]) % output_shape[2]
-        feature_range = tf.range(output_shape[3], dtype='int32')
-        f = one_like_mask * feature_range
+        idxs = tf.reshape(idxs, (-1,))
+        b = tf.repeat(tf.range(input_shape[0]), (input_shape[1]*input_shape[2]*input_shape[3],))
+        y = idxs // (output_shape[2] * output_shape[3])
+        x = (idxs // output_shape[3]) % output_shape[2]
+        c = tf.tile(tf.range(input_shape[3]), (input_shape[0]*input_shape[1]*input_shape[2],))
         
         # transpose indices & reshape update values to one dimension
-        updates_size = tf.size(updates)
-        indices = K.transpose(K.reshape(K.stack([b, y, x, f]), [4, updates_size]))
-        values = K.reshape(updates, [updates_size])
-        ret = tf.scatter_nd(indices, values, output_shape)
-        return ret
+        indices = K.stack([b,y,x,c], axis=-1)
+        updates = K.reshape(features, (-1,))
+        features = tf.scatter_nd(indices, updates, output_shape)
+        return features
     
     def compute_output_shape(self, input_shape):
-        mask_shape = input_shape[1]
-        output_shape = [mask_shape[0], mask_shape[1] * self.size[0], mask_shape[2] * self.size[1], mask_shape[3]]
-        return tuple(output_shape)
+        idxs_shape = input_shape[1]
+        return (idxs_shape[0], idxs_shape[1]*self.size[0], idxs_shape[2]*self.size[1], idxs_shape[3])
     
     def get_config(self):
         config = super(MaxUnpooling2D, self).get_config()
