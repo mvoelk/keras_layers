@@ -1387,6 +1387,50 @@ class MaxUnpooling2D(Layer):
         return config
 
 
+class MaxPoolingWithRelativePosition2D(Layer):
+    def __init__(self, pool_size=5, **kwargs):
+        super().__init__(**kwargs)
+        self.pool_size = conv_utils.normalize_tuple(pool_size, 2, 'pool_size')
+        self.strides = conv_utils.normalize_tuple(1, 2, 'strides')
+        self.padding = conv_utils.normalize_padding('same')
+
+    def call(self, features, **kwargs):
+        size = (1, self.pool_size[0], self.pool_size[1], 1)
+        strides = (1, self.strides[0], self.strides[1], 1)
+        padding = self.padding.upper()
+        output, idxs = tf.nn.max_pool_with_argmax(features, size, strides, padding)
+
+        input_shape = tf.shape(features, out_type='int64')
+
+        y = idxs // (input_shape[2] * input_shape[3])
+        x = (idxs // input_shape[3]) % input_shape[2]
+
+        y_rel = y - tf.range(input_shape[1])[None,:,None,None]
+        x_rel = x - tf.range(input_shape[2])[None,None,:,None]
+
+        y_rel = y_rel*2/self.pool_size[0]
+        x_rel = x_rel*2/self.pool_size[1]
+
+        positions = K.concatenate([y_rel, x_rel], axis=-1)
+
+        return [output, positions]
+
+    def compute_output_shape(self, input_shape):
+        s = input_shape
+        feature_shape = (s[0], s[1]//self.strides[0], s[2]//self.strides[1], s[3])
+        position_shape = (s[0], s[1]//self.strides[0], s[2]//self.strides[1], s[3]*2)
+        return [feature_shape, position_shape]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'pool_size': self.pool_size,
+            'strides': self.strides,
+            'padding': self.padding,
+        })
+        return config
+
+
 class AddCoords2D(Layer):
     """Add coords to a tensor as described in CoordConv paper.
 
